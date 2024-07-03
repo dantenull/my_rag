@@ -1,0 +1,8 @@
+*.pyc
+frontend_design.md
+/test
+/temp
+/chroma_db_test
+Python-3.10.11.tgz
+celerybeat*
+test*.py

@@ -1,0 +1,13 @@
+llm_mode: openai
+llm_model_path: /root/autodl-tmp/qwen1.5-7B-chat-sft
+llm_size: 512
+device: auto
+mongodb_port: 27017
+mongodb_db_name: test_database
+cross_encoder_path: /root/autodl-tmp/ms-marco-MiniLM-L-6-v2
+openai_model_engine: gpt-3.5-turbo
+chroma_collection: test
+# es_host: https://es01:9200
+# es_user: elastic
+es_host: https://127.0.0.1:9200
+es_user: test
