@@ -4,6 +4,7 @@ from injector import inject, singleton
 from typing import List, Dict, Optional
 from schema import Content
 from tools import content_title_process
+import uuid
 
 
 class MyMongodbBase:
@@ -16,14 +17,21 @@ class MyMongodbBase:
     def get_collection(self, collection_name: str):
         return self.db[collection_name]
     
-    def insert_fileinfo(self, fileinfo: Dict):
-        file_name = fileinfo.get('name')
+    def insert_fileinfo(self, fileinfo: Dict) -> str:
+        file_id = str(uuid.uuid4())
+        file = self.file_collection.find_one({'file_id': file_id})
+        if file:
+            return self.insert_fileinfo(fileinfo)
+        else:
+            fileinfo['file_id'] = file_id
+            self.file_collection.insert_one(fileinfo)
+            return file_id
         # if self.get_fileinfo(file_name) and file_name:
         #     self.file_collection.update_one({'name': file_name}, fileinfo)
         # else:
         #     self.file_collection.insert_one(fileinfo)
-        self.delete_fileinfo(file_name)
-        self.file_collection.insert_one(fileinfo)
+        # self.delete_fileinfo(file_name)
+        # self.file_collection.insert_one(fileinfo)
     
     def insert_contents(self, contents: List[Content], file_name: str):
         self.delete_contents(file_name)
@@ -92,7 +100,7 @@ class MyMongodbBase:
         upload_state_no_sql = fileinfo.get('upload_state_no_sql')
         upload_state_elasticsearch = fileinfo.get('upload_state_elasticsearch')
         upload_state_vectorstore = fileinfo.get('upload_state_vectorstore')
-        print(fileinfo)
+        # print(fileinfo)
         if (upload_state_no_sql == 'done') and (upload_state_elasticsearch == 'done') and (upload_state_vectorstore == 'done'):
             result = self.update_fileinfo(file_name, {'upload_state': 'done'})
             return result

@@ -12,7 +12,7 @@ from constants import PROJECT_ROOT_PATH
 from datetime import datetime
 # from celery import Celery
 from schema import Content
-from celery_app import celery_app, process_async_insert_to_es, insert_to_mongodb, insert_to_chroma
+from celery_app import process_async_insert_to_es, insert_to_mongodb, insert_to_chroma
 
 
 def _try_loading_included_file_formats() -> dict[str, type[BaseReader]]:
@@ -104,7 +104,6 @@ class IngestComponent:
         #     if not os.path.exists(p):
         #         os.mkdir(p)
 
-        # TODO 判断文件名不能重复，或使它避免重复
         t = str(time.time())
         path = PROJECT_ROOT_PATH / 'temp' / str(t)
         path.mkdir(parents=True, exist_ok=True)
@@ -151,16 +150,33 @@ class IngestComponent:
             'upload_state': 'waiting',
             'upload_state_no_sql': 'waiting' if file_info.contents else 'done',
             'upload_state_elasticsearch': 'waiting',
-            'upload_state_vectorstore': 'waiting',
+            'upload_state_vectorstore': 'waiting' if self.vectorstore.embedding_model.model_name in ['openai', 'zhipuai'] else 'done',
+            'author': file_info.author,
+            'creator': file_info.creator,
+            'producer': file_info.producer,
+            'subject': file_info.subject,
+            'title': file_info.title,
+            'modification_date': file_info.modification_date,
+            'creation_date': file_info.creation_date,
             **kw
         }
-        self.db.insert_fileinfo(info)
+        file_id = self.db.insert_fileinfo(info)
         if file_info.contents:
-            task_mongo = insert_to_mongodb.apply_async(args=[[c.model_dump() if isinstance(c, Content) else c for c in file_info.contents], file.name])
+            contents = []
+            for content in file_info.contents:
+                content.file_id = file_id
+                # if isinstance(content, Content):
+                #     content = content.model_dump()
+                contents.append(content.model_dump())
+            task_mongo = insert_to_mongodb.apply_async(args=[contents, file.name])
 
         # 存elaticsearch库
         # self.es_client.insert('upload_files', file_info.documents)
-        task_es = process_async_insert_to_es.apply_async(args=[file.name, 'upload_files', [d.model_dump() for d in file_info.documents]])
+        documents = []
+        for document in file_info.documents:
+            document.file_id = file_id
+            documents.append(document.model_dump())
+        task_es = process_async_insert_to_es.apply_async(args=[file.name, 'upload_files', documents])
 
         # 存向量数据库
         documents = [d for d in file_info.documents if d.text]
@@ -173,7 +189,10 @@ class IngestComponent:
         texts = [document.text for document in documents]
         # self.vectorstore.add_texts(texts, metadatas, ids)
         task_vectorstore_id = ''
-        if self.vectorstore.embedding_model.model_name == 'openai':
+        if self.vectorstore.embedding_model.model_name in ['openai', 'zhipuai']:
+            # 只有使用openai等调接口的模型时才进行异步保存
+            # 因为本地模型如果异步保存的话，需要加载模型
+            # TODO 将本地模型改成服务
             task_vectorstore = insert_to_chroma.apply_async(args=[file.name, texts, metadatas, ids])
             task_vectorstore_id = task_vectorstore.id
         else:

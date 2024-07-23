@@ -33,9 +33,9 @@ def similarity_search1(request: Request, query: QueryBody):
     return resp
 
 @chat_router.post("/similarity_search_by_es")
-def similarity_search(request: Request, query: QueryBody):
+async def similarity_search_by_es(request: Request, query: QueryBody):
     service = request.state.injector.get(ChatService)
-    resp = service.similarity_search_by_es(query.query, query.file_name, query.n)
+    resp = await service.similarity_search_by_es(query.query, query.file_name, query.n)
     return resp
 
 @chat_router.post("/query_document")

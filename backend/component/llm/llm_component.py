@@ -1,7 +1,7 @@
 # from transformers import AutoModelForCausalLM, AutoTokenizer
 from injector import inject, singleton
 from settings.settings import Settings
-from llms import LLM, OpenaiLLM, HuggingfaceLLM
+from llms import LLM, OpenaiLLM, HuggingfaceLLM, ZhipuaiLLM
 
 
 @singleton
@@ -23,6 +23,10 @@ class LLMComponent:
                 self.llm = openai_llm
                 # self.tokenizer = openai_llm.tokenizer
                 # self.model_name = openai_llm.model_name
+            case 'zhipuai':
+                engine = settings.zhipuai_model_engine
+                zhipuai_llm = ZhipuaiLLM(engine)
+                self.llm = zhipuai_llm
             case 'mock':
                 # TODO
                 llm = LLM()

@@ -15,26 +15,62 @@ from celery.utils.log import get_task_logger
 import chromadb
 from chromadb import Documents, EmbeddingFunction, Embeddings
 from openai import OpenAI
+from zhipuai import ZhipuAI
 
 
 class MyEmbeddingFunction(EmbeddingFunction):
     def __init__(self) -> None:
-        openai_api_key = os.environ.get('OPENAI_API_KEY')
-        self.llm = OpenAI(api_key=openai_api_key)
-        self.embeddings = self.llm.embeddings
-        self.embeddings_model = 'text-embedding-3-small'
+        self.llm = None
+        self.llm_mode = rag_settings.llm_mode
+        if self.llm_mode == 'openai':
+            openai_api_key = os.environ.get('OPENAI_API_KEY')
+            self.llm = OpenAI(api_key=openai_api_key)
+            self.embeddings_model = 'text-embedding-3-small'
+        elif self.llm_mode == 'zhipuai':
+            zhipuai_api_key = os.environ.get('ZHIPUAI_API_KEY')
+            self.llm = ZhipuAI(api_key=zhipuai_api_key)
+            self.embeddings_model = 'embedding-2'
+        if self.llm:
+            self.embeddings = self.llm.embeddings
         super().__init__()
 
-    def __call__(self, input: Documents) -> Embeddings:
+    def __call__(self, input: Documents) -> List[List[float]]:
+        if not self.llm:
+            return []
         embeddings = []
         input = [text.replace("\n", " ") for text in input if text]
-        embeddings = self._openai_encode(input)
+        # print([len(text) for text in input if len(text) > 512])
+        embeddings = self._encode(input)
         return [list(map(float, e)) for e in embeddings]
     
-    def _openai_encode(self, input: List[str], **kw):
-        data = self.embeddings.create(input=input, model=self.embeddings_model, **kw).data
+    def _encode(self, inputs: List[str]):
+        if self.llm_mode == 'openai':
+            return self._openai_encode(inputs)
+        elif self.llm_mode == 'zhipuai':
+            return self._zhipuai_encode(inputs)
+    
+    def _openai_encode(self, inputs: List[str]):
+        data = self.embeddings.create(input=inputs, model=self.embeddings_model).data
         return [d.embedding for d in data]
-        
+    
+    def _zhipuai_encode(self, inputs: List[str]):
+        return [self.embeddings.create(input=input, model=self.embeddings_model).data[0].embedding for input in inputs]
+    
+    # def _zhipuai_encode_batch(self, input: List[str]):
+    #     input_file_id = 'file_123'
+    #     output_file_id = None
+    #     self.llm.batches.create(
+    #         input_file_id="file_123",
+    #         endpoint="/v4/embeddings",
+    #         completion_window="24h",
+    #     )
+    #     completed = False
+    #     while not completed:
+    #         retrieve = self.llm.batches.retrieve(input_file_id)
+    #         if retrieve['status'] != 'completed':
+    #             continue
+    #         output_file_id = retrieve['output_file_id']
+    #         content = self.llm.files.content(output_file_id) 
 
 
 DEFAULT_RETRY_DELAY = 30
@@ -53,8 +89,8 @@ celery_app.config_from_object('celeryconfig')
 # }
 es_client = ElasticsearchClientBase(rag_settings.es_host, rag_settings.es_user, os.getenv('ELASTIC_PASSWORD'))
 mongodb_client = MyMongodbBase(rag_settings.mongodb_port, rag_settings.mongodb_db_name)
-chroma_client = chromadb.PersistentClient(path='.\\chroma_db_test')
-chroma_client_collection = chroma_client.get_collection(rag_settings.chroma_collection, embedding_function=MyEmbeddingFunction())
+chroma_client = chromadb.PersistentClient(path='.\\chroma_db_test' + '_' + rag_settings.llm_mode)
+chroma_client_collection = chroma_client.get_or_create_collection(rag_settings.chroma_collection, embedding_function=MyEmbeddingFunction())
 
 def get_celery_task_status(task_id: str):
     if not task_id:
@@ -109,7 +145,7 @@ def insert_to_mongodb(self, contents: List[Dict], file_name: str):
     try:
         if contents and file_name:
             mongodb_client.insert_contents(contents, file_name)
-        # TODO 这里改成chain
+        # TODO 把以下两句放到callback里
         mongodb_client.update_fileinfo(file_name, {'upload_state_no_sql': 'done'})
         mongodb_client.update_upload_state(file_name)
         return True
@@ -128,7 +164,7 @@ def insert_to_chroma(self, file_name: str, texts: Iterable[str], metadatas: List
     # 写向量数据库任务
     try:
         chroma_client_collection.add(ids, metadatas=metadatas, documents=texts)
-        # TODO 这里改成chain
+        # TODO 把以下两句放到callback里
         mongodb_client.update_fileinfo(file_name, {'upload_state_vectorstore': 'done'})
         mongodb_client.update_upload_state(file_name)
         return ids

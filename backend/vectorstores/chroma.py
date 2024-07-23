@@ -8,13 +8,13 @@ class MyEmbeddingFunction(EmbeddingFunction):
         super().__init__()
         self.embeddings = embeddings
 
-    def __call__(self, input: Documents) -> Embeddings:
+    def __call__(self, input: Documents) -> List[List[float]]:
         embeddings = []
         if self.embeddings.model_name == 'huggingface':
             self.embeddings.add_special_tokens({'pad_token': '[PAD]'})
             # 这里padding='max_length'才可以补全，padding=True不行
             embeddings = [self.embeddings.encode(text, max_length=2048, truncation=True, padding='max_length', verbose=True) for text in input if text]
-        elif self.embeddings.model_name == 'openai':
+        elif self.embeddings.model_name in ['openai', 'zhipuai']:
             embeddings = [self.embeddings.encode(text) for text in input if text]
         return [list(map(float, e)) for e in embeddings]
 
@@ -28,7 +28,7 @@ class Chroma:
         collection_name: str = _DEFAULT_COLLECTION_NAME,
     ) -> None:
         self.embedding_model = embedding_model
-        self._client = chromadb.PersistentClient(path='.\\chroma_db_test')
+        self._client = chromadb.PersistentClient(path='.\\chroma_db_test' + '_' + self.embedding_model.model_name)
         self._collection = self._client.create_collection(name=collection_name, embedding_function=MyEmbeddingFunction(embedding_model), get_or_create=True)
     
     def add_texts(
@@ -110,7 +110,7 @@ class Chroma:
         docs = []
         docs_index = []
         for i, metadata in enumerate(metadatas):
-            print(metadata)
+            # print(metadata)
             if file_name == metadata.get('file_name') and metadata.get('page_num') in pages_index:
                 docs_index.append(i)
         for i, document in enumerate(documents):

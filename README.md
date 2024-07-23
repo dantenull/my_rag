@@ -12,3 +12,7 @@
 
 1. 设置ELASTIC_PASSWORD环境变量失败，不得不直接进入容器查看密码。
 2. 没有安装所需插件。
+
+### celery
+
+没有启动celery和redis。

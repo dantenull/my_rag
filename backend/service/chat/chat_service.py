@@ -116,7 +116,7 @@ class ChatService:
             result.append(retrieved_documents['documents'][0][o])
         return result
     
-    def similarity_search_by_es(self, query: str, file_name: str, n: int = 10, **kwargs):
+    async def similarity_search_by_es(self, query: str, file_name: str, n: int = 10, **kwargs):
         query_body = {
             'query': {
                 'bool': {
@@ -137,7 +137,7 @@ class ChatService:
             },
             'size': n
         }
-        docs = self.es_client.search_docs('upload_files', query_body)
+        docs = await self.es_client.async_search_docs('upload_files', query_body)
         return [dos['_source']['text'] for dos in docs]
     
     def query_document_by_content(self, query: str, file_name: str):

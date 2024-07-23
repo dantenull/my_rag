@@ -3,7 +3,7 @@ from typing import Literal
 from settings.settings_loader import load_active_settings
 
 class Settings(BaseModel):
-    llm_mode: Literal["openai", "huggingface", "mock"]
+    llm_mode: Literal['openai', 'huggingface', 'zhipuai', 'mock']
     llm_model_path: str = Field(
         # '/root/autodl-tmp/qwen1.5-7B-chat-sft',
         # '/root/autodl-tmp/Qwen1.5-7B-Chat',
@@ -15,6 +15,7 @@ class Settings(BaseModel):
     mongodb_db_name: str = Field()
     cross_encoder_path: str = Field()
     openai_model_engine: str
+    zhipuai_model_engine: str
 
     chroma_collection: str
 
