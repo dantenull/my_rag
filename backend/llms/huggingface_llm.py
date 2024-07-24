@@ -2,7 +2,7 @@ from .base import LLM, Embeddings
 from pathlib import Path
 
 class HuggingfaceLLM(LLM):
-    def __init__(self, path: str) -> None:
+    def __init__(self, path: str, **kw) -> None:
         try:
             from transformers import AutoModelForCausalLM, AutoTokenizer
         except ImportError as e:
@@ -10,7 +10,7 @@ class HuggingfaceLLM(LLM):
         self.model_type = 'huggingface'
         self.model_name = Path(path).name
         # self.tokenizer = AutoTokenizer.from_pretrained(path)
-        self.tokenizer = HuggingfaceEmbeddings(path, AutoTokenizer.from_pretrained(path))
+        self.tokenizer = HuggingfaceEmbeddings(path, AutoTokenizer.from_pretrained(path), **kw)
         self.llm = AutoModelForCausalLM.from_pretrained(
             path, 
             device_map='auto', 
@@ -30,13 +30,11 @@ class HuggingfaceLLM(LLM):
         response = self.tokenizer.batch_decode(generated_ids, skip_special_tokens=True)[0]
         return response
     
-    def create_embedding(self):
-        pass
 
 class HuggingfaceEmbeddings(Embeddings):
-    def __init__(self, path: str, embeddings) -> None:
+    def __init__(self, path: str, embeddings, **kw) -> None:
         self.model_name = Path(path).name
         self.embeddings = embeddings
     
-    def encode(self, text: str, **kw):
-        return self.embeddings.encode(text, **kw)
+    def encode(self, inputs: str, **kw):
+        return self.embeddings.encode(inputs, **kw)

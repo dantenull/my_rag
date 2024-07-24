@@ -1,7 +1,7 @@
 from .base import LLM, Embeddings
 
 class ZhipuaiLLM(LLM):
-    def __init__(self, engine: str) -> None:
+    def __init__(self, engine: str, **kw) -> None:
         try:
             import os
             from zhipuai import ZhipuAI
@@ -14,7 +14,7 @@ class ZhipuaiLLM(LLM):
         self.model_type = 'openai'
         self.model_name = 'openai'
         self.llm = ZhipuAI(api_key=openai_api_key)
-        self.tokenizer = ZhipuaiEmbeddings(self.llm.embeddings)
+        self.tokenizer = ZhipuaiEmbeddings(self.llm.embeddings, **kw)
         self.engine = engine if engine else 'glm-4'
     
     def chat(self, prompt: str) -> str:
@@ -28,13 +28,14 @@ class ZhipuaiLLM(LLM):
 
 
 class ZhipuaiEmbeddings(Embeddings):
-    def __init__(self, embeddings, embeddings_model: str = '') -> None:
+    def __init__(self, embeddings, **kw) -> None:
         self.model_name = 'zhipuai'
         self.embeddings = embeddings
-        self.embeddings_model = embeddings_model if embeddings_model else 'embedding-2'
+        self.embeddings_model = kw.get('embeddings_model', 'embedding-2')
+        super().__init__(**kw)
+
     
-    def encode(self, text: str, **kw):
-        text = text.replace("\n", " ")
-        return (
-            self.embeddings.create(input=text, model=self.embeddings_model, **kw).data[0].embedding
-        )
+    def _encode(self, inputs: str, **kw):
+        # text = text.replace("\n", " ")
+        # 直接传列表会报错，所以只能一个一个传
+        return [self.embeddings.create(input=input, model=self.embeddings_model).data[0].embedding for input in inputs]

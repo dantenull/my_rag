@@ -1,7 +1,8 @@
 from .base import LLM, Embeddings
+from typing import List
 
 class OpenaiLLM(LLM):
-    def __init__(self, engine: str) -> None:
+    def __init__(self, engine: str, **kw) -> None:
         try:
             import os
             from openai import OpenAI
@@ -14,7 +15,7 @@ class OpenaiLLM(LLM):
         self.model_type = 'openai'
         self.model_name = 'openai'
         self.llm = OpenAI(api_key=openai_api_key)
-        self.tokenizer = OpenaiEmbeddings(self.llm.embeddings)
+        self.tokenizer = OpenaiEmbeddings(self.llm.embeddings, **kw)
         self.engine = engine if engine else 'gpt-3.5-turbo'
     
     def chat(self, prompt: str) -> str:
@@ -33,13 +34,14 @@ class OpenaiLLM(LLM):
     #     )
 
 class OpenaiEmbeddings(Embeddings):
-    def __init__(self, embeddings, embeddings_model: str = '') -> None:
+    def __init__(self, embeddings, **kw) -> None:
         self.model_name = 'openai'
         self.embeddings = embeddings
-        self.embeddings_model = embeddings_model if embeddings_model else 'text-embedding-3-small'
+        self.embeddings_model = kw.get('embeddings_model', 'text-embedding-3-small')
+        super().__init__(**kw)
     
-    def encode(self, text: str, **kw):
-        text = text.replace("\n", " ")
-        return (
-            self.embeddings.create(input=[text], model=self.embeddings_model, **kw).data[0].embedding
-        )
+    def _encode(self, inputs: str | List[str], **kw):
+        # text = text.replace("\n", " ")
+        data = self.embeddings.create(input=inputs, model=self.embeddings_model).data
+        return [d.embedding for d in data]
+        

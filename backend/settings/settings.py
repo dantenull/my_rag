@@ -9,11 +9,13 @@ class Settings(BaseModel):
         # '/root/autodl-tmp/Qwen1.5-7B-Chat',
         description='模型路径'
     )
-    llm_size: int = Field()
-    device: Literal['auto', 'cuda', 'cpu'] = Field()
-    mongodb_port: int= Field()
-    mongodb_db_name: str = Field()
-    cross_encoder_path: str = Field()
+    llm_size: int
+    custom_embedding_model: str
+    using_custom_embedding_model: bool
+    device: Literal['auto', 'cuda', 'cpu']
+    mongodb_port: int
+    mongodb_db_name: str
+    cross_encoder_path: str
     openai_model_engine: str
     zhipuai_model_engine: str
 

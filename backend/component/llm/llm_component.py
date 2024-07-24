@@ -19,13 +19,21 @@ class LLMComponent:
                 # self.model_name = huggingface_llm.model_name
             case 'openai':
                 engine = settings.openai_model_engine
-                openai_llm = OpenaiLLM(engine)
+                openai_llm = OpenaiLLM(
+                    engine, 
+                    using_custom_embedding_model=settings.using_custom_embedding_model, 
+                    custom_embedding_model=settings.custom_embedding_model
+                )
                 self.llm = openai_llm
                 # self.tokenizer = openai_llm.tokenizer
                 # self.model_name = openai_llm.model_name
             case 'zhipuai':
                 engine = settings.zhipuai_model_engine
-                zhipuai_llm = ZhipuaiLLM(engine)
+                zhipuai_llm = ZhipuaiLLM(
+                    engine, 
+                    using_custom_embedding_model=settings.using_custom_embedding_model, 
+                    custom_embedding_model=settings.custom_embedding_model
+                )
                 self.llm = zhipuai_llm
             case 'mock':
                 # TODO

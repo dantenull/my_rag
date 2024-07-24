@@ -108,9 +108,9 @@ class ElasticsearchClientBase:
         try:
             ids = [d['_id'] for d in data]
             await self.async_delete(index_name, ids)
-        except:
+        except Exception as e:
             # TODO
-            pass
+            print('async_delete_file\n' + e)
 
     async def async_delete(self, index_name: str, ids: List[int]):
         actions = []

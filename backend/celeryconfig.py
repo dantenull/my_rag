@@ -5,7 +5,7 @@ result_backend = 'redis://localhost:6379/0'
 
 task_queues = (
     Queue('default', Exchange('default'), routing_key='default'),
-    Queue('failed', Exchange('failed'), routing_key='failed'),  # 配置失败队列
+    # Queue('failed', Exchange('failed'), routing_key='failed'),  # 配置失败队列
 )
 
 task_routes = {

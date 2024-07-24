@@ -16,6 +16,20 @@ import chromadb
 from chromadb import Documents, EmbeddingFunction, Embeddings
 from openai import OpenAI
 from zhipuai import ZhipuAI
+from sentence_transformers import SentenceTransformer
+
+class CustomEmbeddings:
+    def __init__(self) -> None:
+        # self.model_name = 'custom_embeddings'
+        self.custom_embedding_model = rag_settings.custom_embedding_model
+        self.model = SentenceTransformer(self.custom_embedding_model, device='cuda')
+
+    def encode(self, inputs: str | List[str], **kw):
+        embeddings = self.model.encode(inputs, normalize_embeddings=True)
+        return embeddings
+
+
+custom_embeddings = CustomEmbeddings()
 
 
 class MyEmbeddingFunction(EmbeddingFunction):
@@ -40,8 +54,19 @@ class MyEmbeddingFunction(EmbeddingFunction):
         embeddings = []
         input = [text.replace("\n", " ") for text in input if text]
         # print([len(text) for text in input if len(text) > 512])
-        embeddings = self._encode(input)
+        embeddings = self.encode(input)
         return [list(map(float, e)) for e in embeddings]
+    
+    def encode(self, inputs: List[str]):
+        if rag_settings.using_custom_embedding_model:
+            return custom_embeddings.encode(inputs)
+        else:
+            return self._encode(inputs)
+    
+    # def encode_common(self, inputs: str | List[str], **kw):
+    #     model = SentenceTransformer(rag_settings.custom_embedding_model)
+    #     embeddings = model.encode(inputs, normalize_embeddings=True)
+    #     return embeddings
     
     def _encode(self, inputs: List[str]):
         if self.llm_mode == 'openai':
@@ -136,7 +161,7 @@ def process_async_insert_to_es(self, file_name: str, index_name: str, data: List
         else:
             logger.error(f"Task failed after {self.max_retries} retries: {exc}")
             # move_task_to_failure_queue(self.name, self.request.args, self.request.kwargs, exc)
-            self.apply_async(args=[file_name, index_name, data], queue='failed')
+            # self.apply_async(args=[file_name, index_name, data], queue='failed')
             raise
 
 @celery_app.task(bind=True, default_retry_delay=DEFAULT_RETRY_DELAY)
@@ -156,7 +181,7 @@ def insert_to_mongodb(self, contents: List[Dict], file_name: str):
         else:
             logger.error(f"Task failed after {self.max_retries} retries: {exc}")
             # move_task_to_failure_queue(self.name, self.request.args, self.request.kwargs, exc)
-            self.apply_async(args=[contents, file_name], queue='failed')
+            # self.apply_async(args=[contents, file_name], queue='failed')
             raise
 
 @celery_app.task(bind=True, default_retry_delay=DEFAULT_RETRY_DELAY)
@@ -175,7 +200,7 @@ def insert_to_chroma(self, file_name: str, texts: Iterable[str], metadatas: List
         else:
             logger.error(f"Task failed after {self.max_retries} retries: {exc}")
             # move_task_to_failure_queue(self.name, self.request.args, self.request.kwargs, exc)
-            self.apply_async(args=[file_name, texts, metadatas, ids], queue='failed')
+            # self.apply_async(args=[file_name, texts, metadatas, ids], queue='failed')
             raise
 
 # @celery_app.task

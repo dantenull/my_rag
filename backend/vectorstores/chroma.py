@@ -29,7 +29,8 @@ class Chroma:
     ) -> None:
         self.embedding_model = embedding_model
         self._client = chromadb.PersistentClient(path='.\\chroma_db_test' + '_' + self.embedding_model.model_name)
-        self._collection = self._client.create_collection(name=collection_name, embedding_function=MyEmbeddingFunction(embedding_model), get_or_create=True)
+        self._collection = self._client.create_collection(
+            name=collection_name, embedding_function=MyEmbeddingFunction(embedding_model), get_or_create=True)
     
     def add_texts(
         self,
