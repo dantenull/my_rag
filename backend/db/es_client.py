@@ -22,6 +22,8 @@ class ElasticsearchClientBase:
             # ssl_assert_hostname=None,
             # ssl_assert_fingerprint=None,
             # ssl_context=None,
+            request_timeout=1000,
+            max_retries=2,
         )
         self.check_connect()
     
@@ -33,7 +35,7 @@ class ElasticsearchClientBase:
         self.client_info = await self.client.info()
         print(self.client_info)
     
-    async def create_index(self, index_name: str) -> None:
+    async def async_create_index(self, index_name: str) -> None:
         is_exists = await self.client.indices.exists(index=index_name)
         if is_exists:
             pass
@@ -64,10 +66,10 @@ class ElasticsearchClientBase:
                     }
                 }
             }
-            self.client.indices.create(index=index_name, mappings=mappings, settings=settings)
+            await self.client.indices.create(index=index_name, mappings=mappings, settings=settings, timeout=-1)
 
     async def async_insert(self, index_name: str, data: List[Dict]) -> None:
-        await self.create_index(index_name)
+        await self.async_create_index(index_name)
         actions = []
         for item in data:
             action = {
@@ -86,16 +88,21 @@ class ElasticsearchClientBase:
             index=index_name,
             stats_only=True,
             raise_on_error=False,
+            timeout=-1,
         )
         print(documents_written_count, errors)
         return documents_written_count, errors
     
     async def async_search_docs(self, index_name: str, query) -> Iterable[Dict[str, Any]]:
         result = []
+        is_exists = await self.client.indices.exists(index=index_name)
+        if not is_exists:
+            return result
         async for value in helpers.async_scan(
             client=self.client,
             query=query,
             index=index_name,
+            request_timeout=1000,
         ):
             result.append(value)
         return result
@@ -126,6 +133,39 @@ class ElasticsearchClientBase:
             actions=actions
         )
         print(documents_written_count, errors)
+    
+    def create_index(self, index_name: str) -> None:
+        is_exists = self.client.indices.exists(index=index_name)
+        if is_exists:
+            pass
+        else:
+            settings = {
+                "index": {
+                    "similarity": {
+                        "custom_bm25": {
+                            "type": "BM25",
+                            "k1": "1.3",
+                            "b": "0.6"
+                        }
+                    }
+                }
+            }
+            mappings = {
+                "properties": {
+                    'doc_id': {
+                        'type': 'keyword',
+                        'index': True
+                    },
+                    "text": {
+                        "type": "text",
+                        "similarity": "custom_bm25",
+                        "index": True,
+                        "analyzer": "ik_max_word",
+                        "search_analyzer": "ik_smart",
+                    }
+                }
+            }
+            self.client.indices.create(index=index_name, mappings=mappings, settings=settings)
     
     def insert(self, index_name: str, data: List[Document]) -> None:
         self.create_index(index_name)

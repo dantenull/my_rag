@@ -10,8 +10,15 @@ class Settings(BaseModel):
         description='模型路径'
     )
     llm_size: int
-    custom_embedding_model: str
-    using_custom_embedding_model: bool
+    custom_embedding_model: str = Field(
+        description='自定义embedding模型路径'
+    )
+    custom_embedding_model_name: str = Field(
+        description='自定义embedding模型名称'
+    )
+    using_custom_embedding_model: bool = Field(
+        description='是否使用自定义embedding模型'
+    )
     device: Literal['auto', 'cuda', 'cpu']
     mongodb_port: int
     mongodb_db_name: str

@@ -67,3 +67,8 @@ def evaluation_doc_by_openai(request: Request, query: QueryBody):
     service = request.state.injector.get(ChatService)
     resp = service.evaluation_doc_by_openai(query.query, query.file_name, query.n)
     return resp
+
+@chat_router.post("/eval_by_quality")
+def eval_by_quality(request: Request, query: QueryBody):
+    service = request.state.injector.get(ChatService)
+    service.eval_by_quality(query.n)

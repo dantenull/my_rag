@@ -7,7 +7,7 @@ from db.es_client import ElasticsearchClient
 from pathlib import Path
 from typing import Any, Iterable, List, Dict, Optional, Tuple
 from pprint import pprint
-from tools import content_title_process
+from tools import content_title_process, get_embedding_model
 from langchain.evaluation import load_evaluator
 import json
 import os
@@ -22,6 +22,7 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import (
     ChatPromptTemplate,
 )
+from eval.evaluation import Evaluation
 
 
 @singleton
@@ -36,10 +37,12 @@ class ChatService:
     ):
         self.llm = llm_component.llm
         self.tokenizer = self.llm.tokenizer
-        self.vectorstore = Chroma(self.tokenizer, settings.chroma_collection)
+        self.settings = settings
+        self.embedding_model = get_embedding_model(
+            settings.using_custom_embedding_model, settings.custom_embedding_model_name, self.llm.tokenizer)
+        self.vectorstore = Chroma(self.tokenizer, settings.chroma_collection, self.embedding_model)
         self.db = db
         self.es_client = es_client
-        self.settings = settings
     
     def chat(self, message: str):
         responds = self.llm.chat(
@@ -376,4 +379,12 @@ class ChatService:
         for i, eg in enumerate(examples):
             result.append({'score': graded_outputs[i]['text'], 'query': eg['query'], 'answer': eg['answer'], 'respond': predictions[i]['result']})
         return result
-
+    
+    def eval_by_quality(self, eval_num: int = 10):
+        '''
+        基于QuALITY数据集进行评估。
+        '''
+        evaluation = Evaluation(eval_num)
+        result = evaluation.eval_dataset_quality()
+        df = result.to_pandas()
+        df.to_excel('eval_by_quality.xlsx')

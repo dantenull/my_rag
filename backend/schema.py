@@ -22,6 +22,7 @@ class Document(BaseModel):
     metadata: Dict[str, Any] = Field(
         default_factory=dict,
     )
+    embedding_model: str = Field(default='')
 
 
 class FileInfo(BaseModel):
@@ -49,4 +50,5 @@ class FileInfo(BaseModel):
         default=None, 
         description=''
     )
+    embedding_model: str = Field(default='')
 

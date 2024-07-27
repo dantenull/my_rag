@@ -1,7 +1,8 @@
 llm_mode: openai
 llm_model_path: /root/autodl-tmp/qwen1.5-7B-chat-sft
 llm_size: 512
-custom_embedding_model: C://Users//dante//Documents//model//xiaobu-embedding-v2
+custom_embedding_model: C://Users//dante//Documents//model//stella_en_400M_v5
+custom_embedding_model_name: stella_en_400M_v5
 using_custom_embedding_model: true
 device: auto
 mongodb_port: 27017

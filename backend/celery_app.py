@@ -1,5 +1,5 @@
 '''
-celery -A celery_app worker --loglevel=info -P eventlet -Q default,failed
+celery -A celery_app worker --loglevel=info -P eventlet
 celery -A celery_app flower --address=127.0.0.1 --port=5566
 '''
 
@@ -17,12 +17,11 @@ from chromadb import Documents, EmbeddingFunction, Embeddings
 from openai import OpenAI
 from zhipuai import ZhipuAI
 from sentence_transformers import SentenceTransformer
+import traceback
 
 class CustomEmbeddings:
     def __init__(self) -> None:
-        # self.model_name = 'custom_embeddings'
-        self.custom_embedding_model = rag_settings.custom_embedding_model
-        self.model = SentenceTransformer(self.custom_embedding_model, device='cuda')
+        self.model = SentenceTransformer(rag_settings.custom_embedding_model, device='cuda', trust_remote_code=True)
 
     def encode(self, inputs: str | List[str], **kw):
         embeddings = self.model.encode(inputs, normalize_embeddings=True)
@@ -39,11 +38,11 @@ class MyEmbeddingFunction(EmbeddingFunction):
         if self.llm_mode == 'openai':
             openai_api_key = os.environ.get('OPENAI_API_KEY')
             self.llm = OpenAI(api_key=openai_api_key)
-            self.embeddings_model = 'text-embedding-3-small'
+            self.embedding_model = 'text-embedding-3-small'
         elif self.llm_mode == 'zhipuai':
             zhipuai_api_key = os.environ.get('ZHIPUAI_API_KEY')
             self.llm = ZhipuAI(api_key=zhipuai_api_key)
-            self.embeddings_model = 'embedding-2'
+            self.embedding_model = 'embedding-2'
         if self.llm:
             self.embeddings = self.llm.embeddings
         super().__init__()
@@ -75,11 +74,11 @@ class MyEmbeddingFunction(EmbeddingFunction):
             return self._zhipuai_encode(inputs)
     
     def _openai_encode(self, inputs: List[str]):
-        data = self.embeddings.create(input=inputs, model=self.embeddings_model).data
+        data = self.embeddings.create(input=inputs, model=self.embedding_model).data
         return [d.embedding for d in data]
     
     def _zhipuai_encode(self, inputs: List[str]):
-        return [self.embeddings.create(input=input, model=self.embeddings_model).data[0].embedding for input in inputs]
+        return [self.embeddings.create(input=input, model=self.embedding_model).data[0].embedding for input in inputs]
     
     # def _zhipuai_encode_batch(self, input: List[str]):
     #     input_file_id = 'file_123'
@@ -132,35 +131,75 @@ async def async_insert_to_es(file_name: str, index_name: str, data: List[Dict]):
     result = await es_client.async_insert(index_name, data)
     return result
 
+'''
+当前es任务中协程使用的loop。
+因为es库在每次请求时会创建session对象，session中会初始化loop，
+再次请求时直接使用这个session，意味着其中的loop不会更新。
+这时如果重新创建loop会报错。
+'''
+current_es_task_loop = None
+
 def get_or_create_event_loop():
+    global current_es_task_loop
     try:
-        loop = asyncio.get_event_loop()
+        if not current_es_task_loop:
+            loop = asyncio.get_event_loop()
+            current_es_task_loop = loop
+        else:
+            loop = current_es_task_loop
         if loop.is_closed():
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
         return loop
     except RuntimeError:
+        logger.warning('get_or_create_event_loop RuntimeError')
+        traceback.print_exc()
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
+        current_es_task_loop = loop
         return loop
 
 @celery_app.task(bind=True, default_retry_delay=DEFAULT_RETRY_DELAY)
 def process_async_insert_to_es(self, file_name: str, index_name: str, data: List[Dict]):
     # 写elasticsearch任务
+    global current_es_task_loop
     try:
-        loop = get_or_create_event_loop()
+        # loop = get_or_create_event_loop()
+        if not current_es_task_loop:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            current_es_task_loop = loop
+        else:
+            loop = current_es_task_loop
         async_result = loop.run_until_complete(async_insert_to_es(file_name, index_name, data))
         # TODO 把以下两句放到callback里
         mongodb_client.update_fileinfo(file_name, {'upload_state_elasticsearch': 'done'})
         mongodb_client.update_upload_state(file_name)
         return async_result
-    except Exception as exc:
+    except RuntimeError:
         logger.error(f"Task failed: {exc}, retrying...")
+        traceback.print_exc()
+
+        # 如果报RuntimeError的错，代表session可能过期（没有证实，属猜测），或是其他的问题，
+        # 这时重新创建loop给current_es_task_loop赋值。
+        # loop = get_or_create_event_loop()
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        current_es_task_loop = loop
+
         if self.request.retries < self.max_retries:
             raise self.retry(exc=exc, queue='failed')
         else:
             logger.error(f"Task failed after {self.max_retries} retries: {exc}")
-            # move_task_to_failure_queue(self.name, self.request.args, self.request.kwargs, exc)
+            # self.apply_async(args=[file_name, index_name, data], queue='failed')
+            raise
+    except Exception as exc:
+        logger.error(f"Task failed: {exc}, retrying...")
+        traceback.print_exc()
+        if self.request.retries < self.max_retries:
+            raise self.retry(exc=exc, queue='failed')
+        else:
+            logger.error(f"Task failed after {self.max_retries} retries: {exc}")
             # self.apply_async(args=[file_name, index_name, data], queue='failed')
             raise
 
@@ -176,11 +215,11 @@ def insert_to_mongodb(self, contents: List[Dict], file_name: str):
         return True
     except Exception as exc:
         logger.error(f"Task failed: {exc}, retrying...")
+        traceback.print_exc()
         if self.request.retries < self.max_retries:
             raise self.retry(exc=exc)
         else:
             logger.error(f"Task failed after {self.max_retries} retries: {exc}")
-            # move_task_to_failure_queue(self.name, self.request.args, self.request.kwargs, exc)
             # self.apply_async(args=[contents, file_name], queue='failed')
             raise
 
@@ -188,6 +227,9 @@ def insert_to_mongodb(self, contents: List[Dict], file_name: str):
 def insert_to_chroma(self, file_name: str, texts: Iterable[str], metadatas: List[dict] = None, ids: List[str] = None):
     # 写向量数据库任务
     try:
+        # ids = ids[:10]
+        # metadatas = metadatas[:10]
+        # texts = texts[:10]
         chroma_client_collection.add(ids, metadatas=metadatas, documents=texts)
         # TODO 把以下两句放到callback里
         mongodb_client.update_fileinfo(file_name, {'upload_state_vectorstore': 'done'})
@@ -195,11 +237,11 @@ def insert_to_chroma(self, file_name: str, texts: Iterable[str], metadatas: List
         return ids
     except Exception as exc:
         logger.error(f"Task failed: {exc}, retrying...")
+        traceback.print_exc()
         if self.request.retries < self.max_retries:
             raise self.retry(exc=exc)
         else:
             logger.error(f"Task failed after {self.max_retries} retries: {exc}")
-            # move_task_to_failure_queue(self.name, self.request.args, self.request.kwargs, exc)
             # self.apply_async(args=[file_name, texts, metadatas, ids], queue='failed')
             raise
 

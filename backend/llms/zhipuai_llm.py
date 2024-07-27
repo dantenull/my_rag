@@ -31,11 +31,11 @@ class ZhipuaiEmbeddings(Embeddings):
     def __init__(self, embeddings, **kw) -> None:
         self.model_name = 'zhipuai'
         self.embeddings = embeddings
-        self.embeddings_model = kw.get('embeddings_model', 'embedding-2')
+        self.embedding_model = kw.get('embedding_model', 'embedding-2')
         super().__init__(**kw)
 
     
     def _encode(self, inputs: str, **kw):
         # text = text.replace("\n", " ")
         # 直接传列表会报错，所以只能一个一个传
-        return [self.embeddings.create(input=input, model=self.embeddings_model).data[0].embedding for input in inputs]
+        return [self.embeddings.create(input=input, model=self.embedding_model).data[0].embedding for input in inputs]

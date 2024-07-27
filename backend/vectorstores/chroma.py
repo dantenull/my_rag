@@ -1,6 +1,7 @@
 import chromadb
 from chromadb import Documents, EmbeddingFunction, Embeddings
 from typing import Any, Iterable, List, Dict
+from injector import singleton
 
 
 class MyEmbeddingFunction(EmbeddingFunction):
@@ -12,13 +13,14 @@ class MyEmbeddingFunction(EmbeddingFunction):
         embeddings = []
         if self.embeddings.model_name == 'huggingface':
             self.embeddings.add_special_tokens({'pad_token': '[PAD]'})
-            # 这里padding='max_length'才可以补全，padding=True不行
+            # 这里使用 adding='max_length' 才可以补全，padding=True 不行
             embeddings = [self.embeddings.encode(text, max_length=2048, truncation=True, padding='max_length', verbose=True) for text in input if text]
         elif self.embeddings.model_name in ['openai', 'zhipuai']:
-            embeddings = [self.embeddings.encode(text) for text in input if text]
+            # embeddings = [self.embeddings.encode(text) for text in input if text]
+            embeddings = self.embeddings.encode(input)
         return [list(map(float, e)) for e in embeddings]
-
-
+ 
+ 
 class Chroma:
     _DEFAULT_COLLECTION_NAME = "test"
 
@@ -26,9 +28,10 @@ class Chroma:
         self, 
         embedding_model,
         collection_name: str = _DEFAULT_COLLECTION_NAME,
+        embedding_model_name: str = '',
     ) -> None:
         self.embedding_model = embedding_model
-        self._client = chromadb.PersistentClient(path='.\\chroma_db_test' + '_' + self.embedding_model.model_name)
+        self._client = chromadb.PersistentClient(path='.\\chroma_db_test' + '_' + embedding_model_name)
         self._collection = self._client.create_collection(
             name=collection_name, embedding_function=MyEmbeddingFunction(embedding_model), get_or_create=True)
     
@@ -101,6 +104,11 @@ class Chroma:
     def get_file_info(self, file_name: str):
         return self._collection.get(
             where={"file_name": {'$eq': file_name}},
+        )
+    
+    def get(self, where):
+        return self._collection.get(
+            where=where,
         )
     
     def get_documents(self, file_name: str, pages_index: list[int]):

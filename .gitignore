@@ -1,2 +1,5 @@
 .env
 test*.py
+chroma_db*
+*.xlsx
+.vscode

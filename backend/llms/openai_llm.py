@@ -1,6 +1,9 @@
 from .base import LLM, Embeddings
 from typing import List
+from injector import singleton
 
+
+@singleton
 class OpenaiLLM(LLM):
     def __init__(self, engine: str, **kw) -> None:
         try:
@@ -37,11 +40,11 @@ class OpenaiEmbeddings(Embeddings):
     def __init__(self, embeddings, **kw) -> None:
         self.model_name = 'openai'
         self.embeddings = embeddings
-        self.embeddings_model = kw.get('embeddings_model', 'text-embedding-3-small')
+        self.embedding_model = kw.get('embedding_model', 'text-embedding-3-small')
         super().__init__(**kw)
     
     def _encode(self, inputs: str | List[str], **kw):
         # text = text.replace("\n", " ")
-        data = self.embeddings.create(input=inputs, model=self.embeddings_model).data
+        data = self.embeddings.create(input=inputs, model=self.embedding_model).data
         return [d.embedding for d in data]
         

@@ -13,6 +13,7 @@ from datetime import datetime
 # from celery import Celery
 from schema import Content
 from celery_app import process_async_insert_to_es, insert_to_mongodb, insert_to_chroma
+from tools import get_embedding_model
 
 
 def _try_loading_included_file_formats() -> dict[str, type[BaseReader]]:
@@ -77,7 +78,9 @@ class IngestComponent:
         self.settings = settings
         self.llm_component = llm_component.llm
         self.db = db
-        self.vectorstore = Chroma(self.llm_component.tokenizer, settings.chroma_collection)
+        self.embedding_model = get_embedding_model(
+            settings.using_custom_embedding_model, settings.custom_embedding_model_name, self.llm_component.tokenizer)
+        self.vectorstore = Chroma(self.llm_component.tokenizer, settings.chroma_collection, self.embedding_model)
         self.es_client = es_client
     
     # 根据语义分割文件，但不适配中文
@@ -111,6 +114,7 @@ class IngestComponent:
         with open(path, 'wb') as f:
             f.write(fileb)
         return self.ingest_file_local(path.absolute(), **kw)
+
     
     def ingest_file_local(self, file_path: Union[str, Path], **kw):
         # def process_metadata(m: Dict) -> None:
@@ -139,6 +143,7 @@ class IngestComponent:
         # })
         # if file_info.contents:
         #     self.db.insert_contents(file_info.contents, file.name)
+        # embedding_model = self._get_embedding_model()
         info = {
             'name': file.name,
             'stem': file.stem,
@@ -158,6 +163,7 @@ class IngestComponent:
             'title': file_info.title,
             'modification_date': file_info.modification_date,
             'creation_date': file_info.creation_date,
+            'embedding_model': self.embedding_model,
             **kw
         }
         file_id = self.db.insert_fileinfo(info)
@@ -175,6 +181,7 @@ class IngestComponent:
         documents = []
         for document in file_info.documents:
             document.file_id = file_id
+            document.embedding_model = self.embedding_model
             documents.append(document.model_dump())
         task_es = process_async_insert_to_es.apply_async(args=[file.name, 'upload_files', documents])
 
@@ -183,9 +190,8 @@ class IngestComponent:
         ids = [document.doc_id for document in documents]
         metadatas = []
         for document in documents:
-            document.metadata['model'] = self.llm_component.model_name
+            document.metadata['embedding_model'] = self.embedding_model
             metadatas.append(document.metadata)
-        # map(process_metadata, metadatas)
         texts = [document.text for document in documents]
         # self.vectorstore.add_texts(texts, metadatas, ids)
         task_vectorstore_id = ''
