@@ -16,6 +16,7 @@ from reader.parser.sentence import SentenceSplitter
 import uuid
 from typing import List, Tuple, Dict
 from datasets import Dataset, Features, Sequence, Value
+from rerank.rerank import Rerank
 
 
 @singleton
@@ -27,6 +28,7 @@ class Evaluation:
             rag_settings.using_custom_embedding_model, rag_settings.custom_embedding_model_name, self.llm.tokenizer)
         self.vectorstore = Chroma(self.tokenizer, 'eval_by_quality', self.embedding_model)
         self.load_dataset_quality(eval_num)
+        self.cross_encoder_path = rag_settings.cross_encoder_path
 
     def load_dataset_quality(self, eval_num: int=100):
         '''
@@ -122,13 +124,16 @@ class Evaluation:
         where = {'title': {'$eq': title}}
         context = ''
         contexts = []
+        ds = []
         for query in querys:
-            docs = self.vectorstore.query_collection(query, n_results=5, where=where)['documents'][0]
-            docs_text = '\n'.join(docs)
-            context += docs_text
-            contexts.append(docs_text)
-        if not context:
+            docs = self.vectorstore.query_collection(query, n_results=20, where=where)['documents'][0]
+            ds.extend(docs)
+        ds = Rerank(self.cross_encoder_path).rerank(question, ds)
+        for d in ds[:5]:    
+            contexts.append(d)
+        if not contexts:
             raise ValueError('No context found')
+        context = '\n'.join(contexts)
         prompt = (
             f"We have provided context information below. \n"
             f"---------------------\n"
