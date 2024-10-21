@@ -25,10 +25,10 @@ class Evaluation:
         self.llm = LLMComponent(rag_settings).llm
         self.tokenizer = self.llm.tokenizer
         self.embedding_model = get_embedding_model(
-            rag_settings.using_custom_embedding_model, rag_settings.custom_embedding_model_name, self.llm.tokenizer)
+            rag_settings.embedding.model, rag_settings.embedding.model_name, self.llm.tokenizer)
         self.vectorstore = Chroma(self.tokenizer, 'eval_by_quality', self.embedding_model)
         self.load_dataset_quality(eval_num)
-        self.cross_encoder_path = rag_settings.cross_encoder_path
+        self.cross_encoder_path = rag_settings.rerank.cross_encoder_path
 
     def load_dataset_quality(self, eval_num: int=100):
         '''

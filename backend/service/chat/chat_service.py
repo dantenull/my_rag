@@ -39,8 +39,8 @@ class ChatService:
         self.tokenizer = self.llm.tokenizer
         self.settings = settings
         self.embedding_model = get_embedding_model(
-            settings.using_custom_embedding_model, settings.custom_embedding_model_name, self.llm.tokenizer)
-        self.vectorstore = Chroma(self.tokenizer, settings.chroma_collection, self.embedding_model)
+            settings.embedding.model, settings.embedding.model_name, self.llm.tokenizer)
+        self.vectorstore = Chroma(self.tokenizer, settings.chroma.collection, self.embedding_model)
         self.db = db
         self.es_client = es_client
     
@@ -110,7 +110,7 @@ class ChatService:
             ],
         }
         retrieved_documents = self.vectorstore.query_collection(prompt, n_results=n, where=where, **kwargs)
-        cross_encoder = CrossEncoder(self.settings.cross_encoder_path)
+        cross_encoder = CrossEncoder(self.settings.rerank.cross_encoder_path)
         pairs = [[query, doc] for doc in retrieved_documents['documents'][0]]
         print(pairs)
         scores = cross_encoder.predict(pairs)
@@ -310,7 +310,7 @@ class ChatService:
         return result
 
     def evaluation_doc_by_distance(self, query: str, answer: str, file_name: str, n: int = 1, **kwargs):
-        embeddings = FakeEmbeddings(model=self.settings.llm_model_path, size=self.settings.llm_size)
+        embeddings = FakeEmbeddings(model=self.settings.llm.model, size=self.settings.llm_size)
         evaluator = EmbeddingDistanceEvalChain(embeddings=embeddings)
 
         l = int(n / 2) 
@@ -334,7 +334,7 @@ class ChatService:
         return result
 
     def evaluation_test_dateset_by_distance(self, test_file: str, n: int) -> List[Dict]:
-        embeddings = FakeEmbeddings(model=self.settings.llm_model_path, size=self.settings.llm_size)
+        embeddings = FakeEmbeddings(model=self.settings.llm.model, size=self.settings.llm_size)
         # evaluator = load_evaluator('embedding_distance')
         evaluator = EmbeddingDistanceEvalChain(embeddings=embeddings)
         i = 1

@@ -5,25 +5,26 @@ from injector import singleton
 
 @singleton
 class OpenaiLLM(LLM):
-    def __init__(self, engine: str, **kw) -> None:
+    def __init__(self, model: str, **kw) -> None:
         try:
             import os
             from openai import OpenAI
         except ImportError as e:
             raise ImportError('pip install openai') from e    
         openai_api_key = os.environ.get('OPENAI_API_KEY')
+        # print('openai_api_key ', openai_api_key)
         if not openai_api_key:
             raise ValueError('no OPENAI_API_KEY')
     
         self.model_type = 'openai'
         self.model_name = 'openai'
-        self.llm = OpenAI(api_key=openai_api_key)
+        self.llm = OpenAI(api_key=openai_api_key, base_url=kw.get('api_base', None))
         self.tokenizer = OpenaiEmbeddings(self.llm.embeddings, **kw)
-        self.engine = engine if engine else 'gpt-3.5-turbo'
+        self.model = model if model else 'gpt-3.5-turbo'
     
     def chat(self, prompt: str) -> str:
         response = self.llm.chat.completions.create(
-            model=self.engine,
+            model=self.model,
             messages=[{'role': 'user', 'content': prompt}],
             n=1,
             temperature=0

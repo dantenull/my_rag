@@ -1,17 +1,49 @@
-llm_mode: openai
-llm_model_path: /root/autodl-tmp/qwen1.5-7B-chat-sft
-llm_size: 512
-custom_embedding_model: C://Users//dante//Documents//model//stella_en_400M_v5
-custom_embedding_model_name: stella_en_400M_v5
-using_custom_embedding_model: true
-device: auto
-mongodb_port: 27017
-mongodb_db_name: test_database
-cross_encoder_path: C://Users//dante//Documents//model//bge-reranker-v2-m3
-openai_model_engine: gpt-3.5-turbo
-zhipuai_model_engine: glm-4-air
-chroma_collection: test
-# es_host: https://es01:9200
-# es_user: elastic
-es_host: https://127.0.0.1:9200
-es_user: test
+llm:
+  mode: openai
+  model: gpt-4o-mini
+  api_base: https://api.gptsapi.net/v1
+
+embedding:
+  model:
+  model_name:
+  # model: D:\model\stella_en_400M_v5
+  # model_name: stella_en_400M_v5
+
+mongodb:
+  port: 27017
+  db_name: test_database
+
+vectorstore:
+  database: chroma
+
+chroma:
+  collection: test
+
+elasticsearch:
+  host: https://127.0.0.1:9200
+  user: test
+
+rerank:
+  cross_encoder_path: D:\model\bge-reranker-v2-m3
+
+extraction:
+  model_name: C:/Users/86176/Documents/AI/models/span-marker-mbert-base-multinerd
+
+
+# llm_mode: zhipuai
+# llm_model_path: /root/autodl-tmp/qwen1.5-7B-chat-sft
+# llm_size: 512
+# custom_embedding_model: D:\model\stella_en_400M_v5
+# custom_embedding_model_name: stella_en_400M_v5
+# using_custom_embedding_model: true
+# device: auto
+# mongodb_port: 27017
+# mongodb_db_name: test_database
+# cross_encoder_path: D:\model\bge-reranker-v2-m3
+# openai_model_engine: gpt-3.5-turbo
+# zhipuai_model_engine: glm-4-air
+# chroma_collection: test
+# # es_host: https://es01:9200
+# # es_user: elastic
+# es_host: https://127.0.0.1:9200
+# es_user: test

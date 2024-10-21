@@ -112,6 +112,6 @@ class MyMongodbBase:
 class MyMongodb(MyMongodbBase):
     @inject
     def __init__(self, settings: Settings) -> None:
-        super().__init__(settings.mongodb_port, settings.mongodb_db_name)
+        super().__init__(settings.mongodb.port, settings.mongodb.db_name)
     
 

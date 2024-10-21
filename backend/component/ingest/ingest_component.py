@@ -79,8 +79,8 @@ class IngestComponent:
         self.llm_component = llm_component.llm
         self.db = db
         self.embedding_model = get_embedding_model(
-            settings.using_custom_embedding_model, settings.custom_embedding_model_name, self.llm_component.tokenizer)
-        self.vectorstore = Chroma(self.llm_component.tokenizer, settings.chroma_collection, self.embedding_model)
+            settings.embedding.model, settings.embedding.model_name, self.llm_component.tokenizer)
+        self.vectorstore = Chroma(self.llm_component.tokenizer, settings.chroma.collection, self.embedding_model)
         self.es_client = es_client
     
     # 根据语义分割文件，但不适配中文
@@ -94,7 +94,7 @@ class IngestComponent:
     #     if extension != '.pdf':
     #         print('只能传pdf')
     #         return 
-    #     file_info = MyPdfReader().load_data_by_semantic(file_path, FakeEmbeddings(model=self.settings.llm_model_path, size=self.settings.llm_size), self.settings.llm_size)
+    #     file_info = MyPdfReader().load_data_by_semantic(file_path, FakeEmbeddings(model=self.settings.llm.model, size=self.settings.llm_size), self.settings.llm_size)
     #     documents = [d for d in file_info.documents if d.text]
     #     ids = [document.doc_id for document in documents]
     #     metadatas = [document.metadata for document in documents]

@@ -21,7 +21,7 @@ import traceback
 
 class CustomEmbeddings:
     def __init__(self) -> None:
-        self.model = SentenceTransformer(rag_settings.custom_embedding_model, device='cuda', trust_remote_code=True)
+        self.model = SentenceTransformer(rag_settings.embedding.model, device='cuda', trust_remote_code=True)
 
     def encode(self, inputs: str | List[str], **kw):
         embeddings = self.model.encode(inputs, normalize_embeddings=True)
@@ -34,7 +34,7 @@ custom_embeddings = CustomEmbeddings()
 class MyEmbeddingFunction(EmbeddingFunction):
     def __init__(self) -> None:
         self.llm = None
-        self.llm_mode = rag_settings.llm_mode
+        self.llm_mode = rag_settings.llm.model
         if self.llm_mode == 'openai':
             openai_api_key = os.environ.get('OPENAI_API_KEY')
             self.llm = OpenAI(api_key=openai_api_key)
@@ -57,13 +57,13 @@ class MyEmbeddingFunction(EmbeddingFunction):
         return [list(map(float, e)) for e in embeddings]
     
     def encode(self, inputs: List[str]):
-        if rag_settings.using_custom_embedding_model:
+        if rag_settings.embedding.model != '' and rag_settings.embedding.model is not None:
             return custom_embeddings.encode(inputs)
         else:
             return self._encode(inputs)
     
     # def encode_common(self, inputs: str | List[str], **kw):
-    #     model = SentenceTransformer(rag_settings.custom_embedding_model)
+    #     model = SentenceTransformer(rag_settings.embedding.model)
     #     embeddings = model.encode(inputs, normalize_embeddings=True)
     #     return embeddings
     
@@ -111,10 +111,10 @@ celery_app.config_from_object('celeryconfig')
 #         'schedule': crontab(minute='*/1'),
 #     },
 # }
-es_client = ElasticsearchClientBase(rag_settings.es_host, rag_settings.es_user, os.getenv('ELASTIC_PASSWORD'))
-mongodb_client = MyMongodbBase(rag_settings.mongodb_port, rag_settings.mongodb_db_name)
-chroma_client = chromadb.PersistentClient(path='.\\chroma_db_test' + '_' + rag_settings.llm_mode)
-chroma_client_collection = chroma_client.get_or_create_collection(rag_settings.chroma_collection, embedding_function=MyEmbeddingFunction())
+es_client = ElasticsearchClientBase(rag_settings.elasticsearch.host, rag_settings.elasticsearch.user, os.getenv('ELASTIC_PASSWORD'))
+mongodb_client = MyMongodbBase(rag_settings.mongodb.port, rag_settings.mongodb.db_name)
+chroma_client = chromadb.PersistentClient(path='.\\chroma_db_test' + '_' + rag_settings.llm.model)
+chroma_client_collection = chroma_client.get_or_create_collection(rag_settings.chroma.collection, embedding_function=MyEmbeddingFunction())
 
 def get_celery_task_status(task_id: str):
     if not task_id:

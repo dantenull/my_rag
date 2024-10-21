@@ -1,6 +1,7 @@
 from sentence_transformers import SentenceTransformer
 from typing import List
 from injector import singleton
+from openai.resources import Embeddings as openai_embeddings
 
 class LLM:
     model_type = ''
@@ -10,13 +11,15 @@ class LLM:
 
 class Embeddings:
     model_name = ''
-    embeddings = None
+    embeddings: openai_embeddings = None
     using_custom_embedding_model = False
 
     def __init__(self, **kw) -> None:
-        self.using_custom_embedding_model = kw.get('using_custom_embedding_model', False)
+        # self.using_custom_embedding_model = kw.get('using_custom_embedding_model', False)
+        custom_embedding_model = kw.get('custom_embedding_model', None)
+        self.using_custom_embedding_model = (custom_embedding_model != '' and custom_embedding_model is not None)
         if self.using_custom_embedding_model:
-            self.embedding_model = kw.get('custom_embedding_model', None)
+            self.embedding_model = custom_embedding_model
             if not self.embedding_model:
                 raise ValueError('custom_embedding_model is None')
             self.custom_embeddings = CustomEmbeddings(self.embedding_model)
@@ -32,7 +35,7 @@ class Embeddings:
         return embeddings
     
     def encode_common(self, inputs: str | List[str], **kw):
-        # model = SentenceTransformer(self.custom_embedding_model)
+        # model = SentenceTransformer(self.embedding.model)
         # embeddings = model.encode(inputs, normalize_embeddings=True)
         embeddings = self.custom_embeddings.encode(inputs, **kw)
         return embeddings

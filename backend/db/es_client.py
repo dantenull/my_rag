@@ -12,7 +12,7 @@ class ElasticsearchClientBase:
             'hosts': es_host,
             'basic_auth': (es_user, es_password),
         }
-        print(self.connects)
+        # print(self.connects)
         self.client = AsyncElasticsearch(
             **self.connects, 
             verify_certs=False,
@@ -228,4 +228,4 @@ class ElasticsearchClientBase:
 class ElasticsearchClient(ElasticsearchClientBase):
     @inject
     def __init__(self, settings: Settings) -> None:
-        super().__init__(settings.es_host, settings.es_user, os.getenv('ELASTIC_PASSWORD'))
+        super().__init__(settings.elasticsearch.host, settings.elasticsearch.user, os.getenv('ELASTIC_PASSWORD'))

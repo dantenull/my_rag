@@ -1,18 +1,18 @@
 from .base import LLM, Embeddings
 from pathlib import Path
 
-class HuggingfaceLLM(LLM):
-    def __init__(self, path: str, **kw) -> None:
+class LocalLLM(LLM):
+    def __init__(self, model: str, **kw) -> None:
         try:
             from transformers import AutoModelForCausalLM, AutoTokenizer
         except ImportError as e:
             raise ImportError('pip install transformers') from e   
         self.model_type = 'huggingface'
-        self.model_name = Path(path).name
-        # self.tokenizer = AutoTokenizer.from_pretrained(path)
-        self.tokenizer = HuggingfaceEmbeddings(path, AutoTokenizer.from_pretrained(path), **kw)
+        self.model_name = Path(model).name
+        # self.tokenizer = AutoTokenizer.from_pretrained(model)
+        self.tokenizer = LocalEmbeddings(model, AutoTokenizer.from_pretrained(model), **kw)
         self.llm = AutoModelForCausalLM.from_pretrained(
-            path, 
+            model, 
             device_map='auto', 
             torch_dtype="auto",
             # trust_remote_code=True,
@@ -31,7 +31,7 @@ class HuggingfaceLLM(LLM):
         return response
     
 
-class HuggingfaceEmbeddings(Embeddings):
+class LocalEmbeddings(Embeddings):
     def __init__(self, path: str, embeddings, **kw) -> None:
         self.model_name = Path(path).name
         self.embeddings = embeddings
