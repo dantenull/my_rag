@@ -1,7 +1,8 @@
 import chromadb
-from chromadb import Documents, EmbeddingFunction, Embeddings
+from chromadb import Documents, EmbeddingFunction
 from typing import Any, Iterable, List, Dict
-from injector import singleton
+# from injector import singleton
+from embeddings import Embeddings
 
 
 class MyEmbeddingFunction(EmbeddingFunction):
@@ -26,12 +27,12 @@ class Chroma:
 
     def __init__(
         self, 
-        embedding_model,
+        embedding_model: Embeddings,
         collection_name: str = _DEFAULT_COLLECTION_NAME,
         embedding_model_name: str = '',
     ) -> None:
         self.embedding_model = embedding_model
-        self._client = chromadb.PersistentClient(path='.\\chroma_db_test' + '_' + embedding_model_name)
+        self._client = chromadb.PersistentClient(path='.\\chroma_db_test' + '_' + 'gpt-4o-mini')
         self._collection = self._client.create_collection(
             name=collection_name, embedding_function=MyEmbeddingFunction(embedding_model), get_or_create=True)
     

@@ -10,6 +10,9 @@ ingest_router = APIRouter()
 class UploadFileLocal(BaseModel):
     upload_file: str
 
+class FileInfo(BaseModel):
+    file_id: str
+
 # class UploadFileEntity(BaseModel):
 #     fileb: UploadFile = File()
 #     notes: str = Form()
@@ -29,7 +32,7 @@ async def ingest_file(request: Request, file: UploadFile):
 @ingest_router.post("/upload_local")
 def upload_local(request: Request, upload_file: UploadFileLocal):
     service = request.state.injector.get(IngestService)
-    return service.upload_local(upload_file.upload_file)
+    return service.ingest_file_local(upload_file.upload_file)
 
 # @ingest_router.post("/upload1")
 # def ingest_file_by_semantic(request: Request, upload_file: UploadFileLocal):
@@ -41,20 +44,20 @@ def ingest_list(request: Request):
     service = request.state.injector.get(IngestService)
     return service.list_ingested()
 
-@ingest_router.post("/get_documents")
-def get_documents(request: Request, get_documents_body: GetDocumentsBody):
-    service = request.state.injector.get(IngestService)
-    return service.get_documents(get_documents_body.file_name, get_documents_body.pages_index)
+# @ingest_router.post("/get_documents")
+# def get_documents(request: Request, get_documents_body: GetDocumentsBody):
+#     service = request.state.injector.get(IngestService)
+#     return service.get_documents(get_documents_body.file_name, get_documents_body.pages_index)
 
-@ingest_router.post("/get_file_info")
-def get_file_info(request: Request, upload_file: UploadFile):
-    service = request.state.injector.get(IngestService)
-    return service.get_file_info(upload_file.upload_file)
+# @ingest_router.post("/get_file_info")
+# def get_file_info(request: Request, upload_file: UploadFile):
+#     service = request.state.injector.get(IngestService)
+#     return service.get_file_info(upload_file.upload_file)
 
 @ingest_router.post("/delete_by_file")
-async def delete_by_file(request: Request, upload_file: UploadFileLocal):
+async def delete_by_file(request: Request, file_info: FileInfo):
     service = request.state.injector.get(IngestService)
-    await service.delete_by_file(upload_file.upload_file)
+    await service.delete_by_file(file_info.file_id)
 
 @ingest_router.post("/get_celery_task_status")
 def get_celery_task_status(request: Request, celery_task: CeleryTask):

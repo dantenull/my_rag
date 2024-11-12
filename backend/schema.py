@@ -28,12 +28,12 @@ class Document(BaseModel):
 class FileInfo(BaseModel):
     file_id: Union[str, None] = Field(default='')
     author: Union[str, None] = Field(default='')
-    creator: Union[str, None] = Field(default='')
-    producer: Union[str, None] = Field(default='')
-    subject: Union[str, None] = Field(default='')
+    # creator: Union[str, None] = Field(default='')
+    # producer: Union[str, None] = Field(default='')
+    # subject: Union[str, None] = Field(default='')
     title: Union[str, None] = Field(default='')
-    modification_date: Union[str, None] = Field(default='')
-    creation_date: Union[str, None] = Field(default='')
+    # modification_date: Union[str, None] = Field(default='')
+    # creation_date: Union[str, None] = Field(default='')
     contents: Optional[List[Content]] = Field(
         default=None, 
         description='目录'

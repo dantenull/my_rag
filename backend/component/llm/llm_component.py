@@ -13,15 +13,15 @@ class LLMComponent:
         match settings.llm.mode:
             case 'local':
                 model = settings.llm.model
-                huggingface_llm = LocalLLM(model)
-                self.llm = huggingface_llm
+                local_llm = LocalLLM(model)
+                self.llm = local_llm
                 # self.tokenizer = huggingface_llm.tokenizer
                 # self.model_name = huggingface_llm.model_name
             case 'openai':
                 model = settings.llm.model
                 openai_llm = OpenaiLLM(
                     model, 
-                    custom_embedding_model=settings.embedding.model,
+                    # custom_embedding_model=settings.embeddings.model,
                     api_base=settings.llm.api_base
                 )
                 self.llm = openai_llm
@@ -31,7 +31,7 @@ class LLMComponent:
                 model = settings.llm.model
                 zhipuai_llm = ZhipuaiLLM(
                     model, 
-                    custom_embedding_model=settings.embedding.model
+                    # custom_embedding_model=settings.embeddings.model
                 )
                 self.llm = zhipuai_llm
             case 'mock':

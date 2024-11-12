@@ -108,6 +108,7 @@ const options = ref([
     { id: 2, label: '生成相关问题', url: 'similarity_search1', disable: false },
     { id: 3, label: '根据目录', url: 'query_document', disable: true },
     { id: 4, label: '通过elasticsearch', url: 'similarity_search_by_es', disable: false },
+    { id: 5, label: '混合', url: 'mix_search', disable: false },
 ])
 
 // 表单输入检查
@@ -158,7 +159,7 @@ const submitForm = (formEl: FormInstance | undefined) => {
         });
         return;
     }
-    http.post(option_value.value.url, {'query': ruleForm.chat, 'n': num.value, 'file_name': multipleSelection.value[0].name})
+    http.post(option_value.value.url, {'query': ruleForm.chat, 'n': num.value, 'file_id': multipleSelection.value[0].file_id})
     .then(response => {
         console.log(response.data);
         chat_records.value = response.data;

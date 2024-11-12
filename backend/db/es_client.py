@@ -53,6 +53,7 @@ class ElasticsearchClientBase:
             }
             mappings = {
                 "properties": {
+                    "dynamic": "true",
                     'doc_id': {
                         'type': 'keyword',
                         'index': True
@@ -77,8 +78,11 @@ class ElasticsearchClientBase:
                 '_id': item['doc_id'],
                 'doc_id': item['doc_id'],
                 'text': item['text'],
+                'file_id': item['file_id'],
+                'embedding_model': item['embedding_model'],
                 **item['metadata']
             }
+            # print(action)
             actions.append(action)
         
         documents_written_count, errors = await helpers.async_bulk(
@@ -107,13 +111,15 @@ class ElasticsearchClientBase:
             result.append(value)
         return result
 
-    async def async_search_file(self, index_name: str, file_name: str) -> Iterable[Dict[str, Any]]:
-        return await self.async_search_docs(index_name, {'query': {'match': {'file_name': file_name}}})
+    async def async_search_file(self, index_name: str, file_id: str) -> Iterable[Dict[str, Any]]:
+        return await self.async_search_docs(index_name, {'query': {'match': {'file_id': file_id}}})
 
-    async def async_delete_file(self, index_name: str, file_name: str) -> None:
-        data = await self.async_search_file(index_name, file_name)
+    async def async_delete_file(self, index_name: str, file_id: str) -> None:
+        # print('async_delete_file')
+        data = await self.async_search_file(index_name, file_id)
         try:
             ids = [d['_id'] for d in data]
+            # print(ids)
             await self.async_delete(index_name, ids)
         except Exception as e:
             # TODO
@@ -152,6 +158,7 @@ class ElasticsearchClientBase:
             }
             mappings = {
                 "properties": {
+                    "dynamic": "true",
                     'doc_id': {
                         'type': 'keyword',
                         'index': True
@@ -176,6 +183,8 @@ class ElasticsearchClientBase:
                 '_id': item.doc_id,
                 'doc_id': item.doc_id,
                 'text': item.text,
+                'file_id': item['file_id'],
+                'embedding_model': item['embedding_model'],
                 **item.metadata
             }
             actions.append(action)

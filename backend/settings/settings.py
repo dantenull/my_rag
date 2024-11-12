@@ -5,14 +5,14 @@ from .read_dotenv import read_dotenv
 
 
 class LLMSettings(BaseModel):
-    mode: Literal['openai', 'local', 'zhipuai', 'mock']
+    mode: Literal['openai', 'local', 'mock']
     model: str 
     api_base: str | None = None
     # size: int
     # device: Literal['auto', 'cuda', 'cpu']
 
 
-class EmbeddingSettings(BaseModel):
+class EmbeddingsSettings(BaseModel):
     # model: Optional[str] = Field(
     #     default=None,
     #     description='自定义embedding模型路径'
@@ -21,6 +21,7 @@ class EmbeddingSettings(BaseModel):
     #     default=None,
     #     description='自定义embedding模型名称'
     # )
+    mode: Literal['openai', 'local', 'mock']
     model: str | None = Field(
         # default=None,
         description='自定义embedding模型路径'
@@ -32,6 +33,8 @@ class EmbeddingSettings(BaseModel):
     # using_custom_embedding_model: bool = Field(
     #     description='是否使用自定义embedding模型'
     # )
+    dim: int
+    api_base: str | None = None
 
 
 class MongodbSettings(BaseModel):
@@ -40,7 +43,7 @@ class MongodbSettings(BaseModel):
 
 
 class VectorstoreSettings(BaseModel):
-    database: Literal['chroma']
+    database: Literal['chroma', 'milvus']
 
 
 class ChromaSettings(BaseModel):
@@ -49,7 +52,7 @@ class ChromaSettings(BaseModel):
 
 class MilvusSettings(BaseModel):
     uri: str
-    port: str
+    port: int
     database: str
 
 
@@ -68,10 +71,11 @@ class EntityExtractionSetting(BaseModel):
 
 class Settings(BaseModel):
     llm: LLMSettings
-    embedding: EmbeddingSettings
+    embeddings: EmbeddingsSettings
     mongodb: MongodbSettings
     vectorstore: VectorstoreSettings
     chroma: ChromaSettings
+    milvus: MilvusSettings
     elasticsearch: ElasticsearchSettings
     rerank: RerankSettings
     extraction: EntityExtractionSetting

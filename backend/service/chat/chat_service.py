@@ -1,6 +1,7 @@
 from injector import inject, singleton
 from settings.settings import Settings
 from component.llm.llm_component import LLMComponent
+from component.embeddings.embeddings_component import EmbeddingsComponent
 from vectorstores.chroma import Chroma
 from db.mongodb import MyMongodb
 from db.es_client import ElasticsearchClient
@@ -22,7 +23,11 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import (
     ChatPromptTemplate,
 )
-from eval.evaluation import Evaluation
+from backend.eval.quality.evaluation import EvaluationQuality
+from eval.wikimultihop.evaluation_2wikimultihop import Evaluation2wikimultihop
+from query_optimizer import QueryOptimiserHyDE, QueryOptimiserMultiQuery, QueryOptimiserQuery2doc
+from tools import reciprocal_rank_fusion
+from vectorstores.milvus import Milvus
 
 
 @singleton
@@ -31,18 +36,26 @@ class ChatService:
     def __init__(
         self, 
         llm_component: LLMComponent, 
+        embeddings_component: EmbeddingsComponent, 
         db: MyMongodb,
         es_client: ElasticsearchClient,
         settings: Settings,
     ):
+        self.llm_component = llm_component
         self.llm = llm_component.llm
-        self.tokenizer = self.llm.tokenizer
+        self.embeddings_component = embeddings_component
+        self.embeddings = embeddings_component.embeddings
+        # self.tokenizer = self.llm.tokenizer
         self.settings = settings
-        self.embedding_model = get_embedding_model(
-            settings.embedding.model, settings.embedding.model_name, self.llm.tokenizer)
-        self.vectorstore = Chroma(self.tokenizer, settings.chroma.collection, self.embedding_model)
+        # self.embedding_model = get_embedding_model(
+        #     settings.embeddings.model, settings.embeddings.model_name, self.llm.tokenizer)
+        self.embeddings_model = settings.embeddings.model_name
+        # self.vectorstore = Chroma(self.tokenizer, settings.chroma.collection, self.embedding_model)
+        self.vectorstore = Milvus(settings.milvus.uri, settings.milvus.port, settings.milvus.database)
         self.db = db
         self.es_client = es_client
+
+        # self.evaluation = Evaluation2wikimultihop(self.llm, self.embeddings, self.db, self.es_client, self.settings)
     
     def chat(self, message: str):
         responds = self.llm.chat(
@@ -66,60 +79,77 @@ class ChatService:
     #     docs2 = self.similarity_search(query, file_name=file_name, n=n, **kwargs)
     #     docs3 = self.similarity_search1(query, file_name=file_name, n=n, **kwargs)
     
-    def similarity_search0(self, query: str, file_name: str = '', n: int = 1, **kwargs):
-        print('--------similarity_search0----------')
-        where = {
-            '$and': [
-                {'file_name': {'$eq': file_name}},
-                {'model': {'$eq': self.llm.model_name}},
-                {'words_num': {'$gte': 30}},
-            ],
-        }
-        docs = self.vectorstore.query_collection(query, n_results=n, where=where, **kwargs)
-        print(docs)
-        return docs['documents'][0]
+    # def similarity_search0(self, query: str, file_name: str = '', n: int = 1, **kwargs):
+    #     print('--------similarity_search0----------')
+    #     where = {
+    #         '$and': [
+    #             {'file_name': {'$eq': file_name}},
+    #             {'model': {'$eq': self.llm.model_name}},
+    #             {'words_num': {'$gte': 30}},
+    #         ],
+    #     }
+    #     docs = self.vectorstore.query_collection(query, n_results=n, where=where, **kwargs)
+    #     print(docs)
+    #     return docs['documents'][0]
     
-    def similarity_search(self, query: str, file_name: str = '', n: int = 1, **kwargs):
-        print('--------similarity_search----------')
-        prompt = f'为给定的问题提供一个简短的示例答案，这可能可以在一些文档中找到：{query}'
-        responds = self.llm.chat(prompt)
-        print(responds)
-        prompt = f'{query}\n示例答案：{responds}'
-        where = {
-            '$and': [
-                {'file_name': {'$eq': file_name}},
-                {'model': {'$eq': self.llm.model_name}},
-                {'words_num': {'$gte': 30}},
-            ],
-        }
-        result = self.vectorstore.query_collection(prompt, n_results=n, where=where, **kwargs)
-        print(result)
-        return result['documents'][0]
+    # def similarity_search(self, query: str, file_name: str = '', n: int = 1, **kwargs):
+    #     print('--------similarity_search----------')
+    #     prompt = f'为给定的问题提供一个简短的示例答案，这可能可以在一些文档中找到：{query}'
+    #     responds = self.llm.chat(prompt)
+    #     print(responds)
+    #     prompt = f'{query}\n示例答案：{responds}'
+    #     where = {
+    #         '$and': [
+    #             {'file_name': {'$eq': file_name}},
+    #             {'model': {'$eq': self.llm.model_name}},
+    #             {'words_num': {'$gte': 30}},
+    #         ],
+    #     }
+    #     result = self.vectorstore.query_collection(prompt, n_results=n, where=where, **kwargs)
+    #     print(result)
+    #     return result['documents'][0]
     
-    def similarity_search1(self, query: str, file_name: str = '', n: int = 10, **kwargs):
-        print('--------similarity_search1----------')
-        prompt = f'问题：{query}\n提出和这个问题最多五个相关问题来帮助他们找到他们所需要的信息，针对所提供的问题。只提简短的问题，不提复合句。提出涵盖主题不同方面的各种问题。确保它们是完整的问题，并且是相关的原来的问题。每行输出一个问题。不要给问题编号。'
-        responds = self.llm.chat(prompt)
-        print(responds)
-        prompt = f'{query}\n{responds}'
-        where = {
-            '$and': [
-                {'file_name': {'$eq': file_name}},
-                {'model': {'$eq': self.llm.model_name}}, 
-                {'words_num': {'$gte': 30}},
-            ],
-        }
-        retrieved_documents = self.vectorstore.query_collection(prompt, n_results=n, where=where, **kwargs)
-        cross_encoder = CrossEncoder(self.settings.rerank.cross_encoder_path)
-        pairs = [[query, doc] for doc in retrieved_documents['documents'][0]]
-        print(pairs)
-        scores = cross_encoder.predict(pairs)
-        result = []
-        for o in np.argsort(scores)[::-1]:
-            result.append(retrieved_documents['documents'][0][o])
-        return result
+    # def similarity_search1(self, query: str, file_name: str = '', n: int = 10, **kwargs):
+    #     print('--------similarity_search1----------')
+    #     prompt = f'问题：{query}\n提出和这个问题最多五个相关问题来帮助他们找到他们所需要的信息，针对所提供的问题。只提简短的问题，不提复合句。提出涵盖主题不同方面的各种问题。确保它们是完整的问题，并且是相关的原来的问题。每行输出一个问题。不要给问题编号。'
+    #     responds = self.llm.chat(prompt)
+    #     print(responds)
+    #     prompt = f'{query}\n{responds}'
+    #     where = {
+    #         '$and': [
+    #             {'file_name': {'$eq': file_name}},
+    #             {'model': {'$eq': self.llm.model_name}}, 
+    #             {'words_num': {'$gte': 30}},
+    #         ],
+    #     }
+    #     retrieved_documents = self.vectorstore.query_collection(prompt, n_results=n, where=where, **kwargs)
+    #     cross_encoder = CrossEncoder(self.settings.rerank.cross_encoder_path)
+    #     pairs = [[query, doc] for doc in retrieved_documents['documents'][0]]
+    #     print(pairs)
+    #     scores = cross_encoder.predict(pairs)
+    #     result = []
+    #     for o in np.argsort(scores)[::-1]:
+    #         result.append(retrieved_documents['documents'][0][o])
+    #     return result
     
-    async def similarity_search_by_es(self, query: str, file_name: str, n: int = 10, **kwargs):
+    def similarity_search_by_vectordb(self, query: str, file_id: str = '', n: int = 10, **kwargs):
+        print('--------similarity_search_by_vectordb----------')
+        prompt = QueryOptimiserQuery2doc().process_query(query)
+        # where = {
+        #     '$and': [
+        #         {'file_id': {'$eq': file_id}},
+        #         {'model': {'$eq': self.llm.model_name}},
+        #         {'words_num': {'$gte': 30}},
+        #     ],
+        # }
+        # result = self.vectorstore.query_collection(prompt, n_results=n, where=where, **kwargs)
+        data = self.embeddings.encode(prompt)
+        result = self.vectorstore.search_data(self.settings.embeddings.dim, data=data, limit=n)
+        # print(len(result['documents']))
+        # return [(result['ids'][i], doc) for i, doc in enumerate(result['documents'])]
+        return [(r['id'], r['chunk'], r) for r in result]
+    
+    async def similarity_search_by_es(self, query: str, file_id: str, n: int = 10, **kwargs):
         query_body = {
             'query': {
                 'bool': {
@@ -133,7 +163,7 @@ class ChatService:
                     },
                     'filter': {
                         'match': {
-                            'file_name': file_name,
+                            'file_id': file_id,
                         },
                     }
                 },
@@ -141,136 +171,153 @@ class ChatService:
             'size': n
         }
         docs = await self.es_client.async_search_docs('upload_files', query_body)
-        return [dos['_source']['text'] for dos in docs]
+        print(docs[:n])
+        return [(doc['_source']['doc_id'], doc['_source']['text'], doc['_source']) for doc in docs[:n]]
     
-    def query_document_by_content(self, query: str, file_name: str):
-        def get_content_in_responds() -> List[str]:
-            separators = ['\n', ',', '，', '、']
-            for sep in separators:
-                if sep in responds:
-                    titles = responds.split(sep)
-                    titles = [
-                        content_title_process(t)
-                        for t in titles if t]
-                    if len(titles) >= 1:
-                        return titles
-            return [responds]
+    def _get_rrf_result(self, result: List[List], n: int) -> List[str]:
+        reranked_results = reciprocal_rank_fusion(result)
+        if len(reranked_results) > n:
+            reranked_results = reranked_results[:n]
+        texts = [r[2] for r in reranked_results]
+        return texts
+    
+    async def mix_search(self, query: str, file_id: str, n: int, **kwargs):
+        vectordb_result = self.similarity_search_by_vectordb(query, file_id, n, **kwargs)
+        es_result = await self.similarity_search_by_es(query, file_id, n, **kwargs)
+        print(type(vectordb_result), type(es_result))
+        texts = self._get_rrf_result([vectordb_result, es_result], n)
+        prompt = '根据给出的文档回答问题：\n\n' + '\n'.join(texts)
+        result = self.llm.chat(query=query, prompt=prompt)
+        return result
+    
+    # def query_document_by_content(self, query: str, file_name: str):
+    #     def get_content_in_responds() -> List[str]:
+    #         separators = ['\n', ',', '，', '、']
+    #         for sep in separators:
+    #             if sep in responds:
+    #                 titles = responds.split(sep)
+    #                 titles = [
+    #                     content_title_process(t)
+    #                     for t in titles if t]
+    #                 if len(titles) >= 1:
+    #                     return titles
+    #         return [responds]
 
-        print('----------query_document---------')
-        # file = Path(file_path)
-        fileinfo = self.db.get_fileinfo(file_name)
-        max_content_level = fileinfo.get('max_content_level')
-        max_page_num = fileinfo.get('max_page_num')
-        responds = ''
-        index = 1
-        last_titles = []
-        while True:
-            if index > max_content_level:
-                break
-            contents = self.db.get_contents(file_name, level=index, last_titles=last_titles)
-            select_count = 2
-            contents_str = '\n'.join(contents)
-            pprint('----------contents---------')
-            pprint(contents)
-            # TODO 考虑将标题及所有上级标题拼一起再问LLM，因为有些标题很简单，比如“小结”
-            message = f"""
-                请参考以下示例回答问题：
-                示例问题：
-                在以下的话题中，选出{select_count}个和“什么是nosql数据库？”这个话题意思最接近的话题，直接回答原话题，不要少字，不要说多余的话：\n
-                关系型数据库\n
-                非关系型数据库\n
-                redis使用方法\n
-                母猪的产后护理\n
-                \n
-                示例答案：
-                非关系型数据库\n
-                redis使用方法
-                \n
-                现在回答以下问题：
-                在以下的话题中，选出{select_count}个和“{query}”这个话题意思最接近的话题，直接回答原话题，不要少字，不要说多余的话：\n
-                {contents_str}
-                \n
-            """
-            responds = self.llm.chat(
-                message, 
-            )
-            pprint('----------responds---------')
-            pprint(responds)
-            last_titles = get_content_in_responds()
-            pprint('----------last_titles---------')
-            pprint(last_titles)
-            if not last_titles:
-                continue
-            index += 1
-        print('----------------------------')
-        # result_titles = []
-        # for title in last_titles:
-        #     t = content_title_process(title)
-        #     contents = self.db.content_collection.find({
-        #         'title': {'$regex': f'^.*?{t}.*'},
-        #     })
-        #     for content in contents:
-        #         pprint(content['title'])
-        #         result_titles.append(content['title'])
-        contents = self.db.content_collection.find({
-            'file_name': file_name
-        })
-        contents_info = []
-        for content in contents:
-            contents_info.append({
-                'title': content['title'], 
-                'page_num': content['page_num']
-            })
-        page_nums = []
-        for i, content in enumerate(contents_info):
-            for title in last_titles:
-                t = content_title_process(title)
-                if t in content['title']:
-                    if i < len(contents_info):
-                        page_nums.append((content['page_num'], contents_info[i + 1]['page_num']))
-                    else:
-                        page_nums.append((content['page_num'], max_page_num))
-        pprint(page_nums)
-        if not page_nums:
-            return 
-        where = {
-            '$and': [
-                {'file_name': {'$eq': file_name}},
-                {'model': {'$eq': self.llm.model_name}},
-                {
-                    '$or': [
-                        {
-                            '$and': [
-                                {'page_num': {'$gte': page_num[0]}}, {'page_num': {'$lte': page_num[1]}}
-                            ]
-                        } 
-                    for page_num in page_nums]
-                } 
-                if len(page_nums) > 1 else 
-                {
-                    '$and': [
-                        {'page_num': {'$gte': page_nums[0][0]}}, {'page_num': {'$lte': page_nums[0][1]}}
-                    ]
-                }, 
-                {'words_num': {'$gte': 30}},
-            ],
-        }
-        documents = self.vectorstore.query_collection(query, n_results=5, where=where)
-        pprint(documents)
+    #     print('----------query_document---------')
+    #     # file = Path(file_path)
+    #     fileinfo = self.db.get_fileinfo(file_name)
+    #     max_content_level = fileinfo.get('max_content_level')
+    #     max_page_num = fileinfo.get('max_page_num')
+    #     responds = ''
+    #     index = 1
+    #     last_titles = []
+    #     while True:
+    #         if index > max_content_level:
+    #             break
+    #         contents = self.db.get_contents(file_name, level=index, last_titles=last_titles)
+    #         select_count = 2
+    #         contents_str = '\n'.join(contents)
+    #         pprint('----------contents---------')
+    #         pprint(contents)
+    #         # TODO 考虑将标题及所有上级标题拼一起再问LLM，因为有些标题很简单，比如“小结”
+    #         message = f"""
+    #             请参考以下示例回答问题：
+    #             示例问题：
+    #             在以下的话题中，选出{select_count}个和“什么是nosql数据库？”这个话题意思最接近的话题，直接回答原话题，不要少字，不要说多余的话：\n
+    #             关系型数据库\n
+    #             非关系型数据库\n
+    #             redis使用方法\n
+    #             母猪的产后护理\n
+    #             \n
+    #             示例答案：
+    #             非关系型数据库\n
+    #             redis使用方法
+    #             \n
+    #             现在回答以下问题：
+    #             在以下的话题中，选出{select_count}个和“{query}”这个话题意思最接近的话题，直接回答原话题，不要少字，不要说多余的话：\n
+    #             {contents_str}
+    #             \n
+    #         """
+    #         responds = self.llm.chat(
+    #             message, 
+    #         )
+    #         pprint('----------responds---------')
+    #         pprint(responds)
+    #         last_titles = get_content_in_responds()
+    #         pprint('----------last_titles---------')
+    #         pprint(last_titles)
+    #         if not last_titles:
+    #             continue
+    #         index += 1
+    #     print('----------------------------')
+    #     # result_titles = []
+    #     # for title in last_titles:
+    #     #     t = content_title_process(title)
+    #     #     contents = self.db.content_collection.find({
+    #     #         'title': {'$regex': f'^.*?{t}.*'},
+    #     #     })
+    #     #     for content in contents:
+    #     #         pprint(content['title'])
+    #     #         result_titles.append(content['title'])
+    #     contents = self.db.content_collection.find({
+    #         'file_name': file_name
+    #     })
+    #     contents_info = []
+    #     for content in contents:
+    #         contents_info.append({
+    #             'title': content['title'], 
+    #             'page_num': content['page_num']
+    #         })
+    #     page_nums = []
+    #     for i, content in enumerate(contents_info):
+    #         for title in last_titles:
+    #             t = content_title_process(title)
+    #             if t in content['title']:
+    #                 if i < len(contents_info):
+    #                     page_nums.append((content['page_num'], contents_info[i + 1]['page_num']))
+    #                 else:
+    #                     page_nums.append((content['page_num'], max_page_num))
+    #     pprint(page_nums)
+    #     if not page_nums:
+    #         return 
+    #     where = {
+    #         '$and': [
+    #             {'file_name': {'$eq': file_name}},
+    #             {'model': {'$eq': self.llm.model_name}},
+    #             {
+    #                 '$or': [
+    #                     {
+    #                         '$and': [
+    #                             {'page_num': {'$gte': page_num[0]}}, {'page_num': {'$lte': page_num[1]}}
+    #                         ]
+    #                     } 
+    #                 for page_num in page_nums]
+    #             } 
+    #             if len(page_nums) > 1 else 
+    #             {
+    #                 '$and': [
+    #                     {'page_num': {'$gte': page_nums[0][0]}}, {'page_num': {'$lte': page_nums[0][1]}}
+    #                 ]
+    #             }, 
+    #             {'words_num': {'$gte': 30}},
+    #         ],
+    #     }
+    #     documents = self.vectorstore.query_collection(query, n_results=5, where=where)
+    #     pprint(documents)
 
-        documents_str = '\n'.join(['\n'.join([d for d in document]) for document in documents['documents']])
-        query_process = f"""
-            根据以下文档回答问题，<S>代表文档开始，<E>代表文档结束：
-            <S>
-            {documents_str}
-            <E>
-            现在回答问题：
-            {query}
-        """
-        responds = self.llm.chat(
-            query_process, 
-        )
-        return responds
+    #     documents_str = '\n'.join(['\n'.join([d for d in document]) for document in documents['documents']])
+    #     query_process = f"""
+    #         根据以下文档回答问题，<S>代表文档开始，<E>代表文档结束：
+    #         <S>
+    #         {documents_str}
+    #         <E>
+    #         现在回答问题：
+    #         {query}
+    #     """
+    #     responds = self.llm.chat(
+    #         query_process, 
+    #     )
+    #     return responds
     
     def evaluation_doc_by_openai(self, query: str, file_name: str, n: int = 1, **kwargs):
         print('--------evaluation_doc_by_openai----------')
@@ -281,7 +328,7 @@ class ChatService:
         eval_chain = QAEvalChain.from_llm(openai)
 
         l = int(n / 2) 
-        print(l)
+        # print(l)
         respond = self.llm.chat(query)
         docs1 = self.similarity_search0(query, file_name=file_name, n=n, **kwargs)
         respond1 = self.llm.chat(self.get_prompt_by_docs(query, docs1[:l]))
@@ -384,7 +431,23 @@ class ChatService:
         '''
         基于QuALITY数据集进行评估。
         '''
-        evaluation = Evaluation(eval_num)
+        evaluation = EvaluationQuality(self.llm_component, self.embeddings_component, self.db, self.es_client, self.settings)
+        evaluation.init(eval_num)
         result = evaluation.eval_dataset_quality()
         df = result.to_pandas()
         df.to_excel('eval_by_quality.xlsx')
+    
+    def save_2wikimultihop_data(self, file_path: str, eval_num: int = 10):
+        self.evaluation = Evaluation2wikimultihop(self.llm_component, self.embeddings_component, self.db, self.es_client, self.settings)
+        self.evaluation.init(file_path, eval_num)
+    
+    def eval_by_2wikimultihop_process_data(self, file_path: str, eval_num: int = 10):
+        self.evaluation = Evaluation2wikimultihop(self.llm_component, self.embeddings_component, self.db, self.es_client, self.settings)
+        self.evaluation.init(file_path, eval_num)
+        self.evaluation.process_datas()
+    
+    async def eval_by_2wikimultihop(self, file_path: str, eval_num: int = 10):
+        self.evaluation = Evaluation2wikimultihop(self.llm_component, self.embeddings_component, self.db, self.es_client, self.settings)
+        self.evaluation.init(file_path, eval_num)
+        metrics = await self.evaluation.eval_dataset()
+        return metrics

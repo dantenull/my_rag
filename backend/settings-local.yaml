@@ -3,21 +3,32 @@ llm:
   model: gpt-4o-mini
   api_base: https://api.gptsapi.net/v1
 
-embedding:
-  model:
-  model_name:
-  # model: D:\model\stella_en_400M_v5
-  # model_name: stella_en_400M_v5
+embeddings:
+  # mode: local
+  # model: C:/Users/86176/Documents/AI/models/Conan-embedding-v1
+  # model_name: Conan-embedding-v1
+  # api_base: 
+  # dim: 1792
+  mode: openai
+  model: text-embedding-ada-002
+  model_name: text-embedding-ada-002
+  api_base: https://api.gptsapi.net/v1
+  dim: 1536
 
 mongodb:
   port: 27017
   db_name: test_database
 
 vectorstore:
-  database: chroma
+  database: milvus
 
 chroma:
   collection: test
+
+milvus:
+  uri: http://192.168.254.185
+  port: 19530
+  database: my_rag_database
 
 elasticsearch:
   host: https://127.0.0.1:9200
@@ -27,7 +38,7 @@ rerank:
   cross_encoder_path: D:\model\bge-reranker-v2-m3
 
 extraction:
-  model_name: C:/Users/86176/Documents/AI/models/span-marker-mbert-base-multinerd
+  model_path: C:/Users/86176/Documents/AI/models/span-marker-mbert-base-multinerd
 
 
 # llm_mode: zhipuai

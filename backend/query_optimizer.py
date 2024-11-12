@@ -13,7 +13,7 @@ class QueryOptimizer:
     def __init__(self) -> None:
         self.llm = LLMComponent(rag_settings).llm
 
-    def process_query(self, query: str) -> Union[list[str], str]:
+    def process_query(self, query: str, **kw) -> Union[list[str], str]:
          return self._process_query(query)
 
     def _process_query(self, query: str) -> str:
@@ -73,7 +73,7 @@ class QueryOptimiserMultiQuery(QueryOptimizer):
     通过对用户问题产生多种视角，您的目标是帮助用户克服一些限制基于距离的相似度搜索。
     提供这些选择用换行符分隔的问题。最初的问题： {query}"""
 
-    def process_query(self, query: str) -> list[str]:
+    def process_query(self, query: str, **kw) -> list[str]:
         resp = self._process_query(query)
         lines = resp.strip().split("\n")
         return lines
@@ -86,10 +86,12 @@ class QueryOptimiserQuery2doc(QueryOptimizer):
     然后是向量检索，因为向量召回的泛化能力是比较强的，因此不需要复制，直接拼接起来就好了。
     '''
     name = 'query2doc'
-    pormpt_tmpl = '{query}\n\n要求：用大约100字回复以上问题。'
-    # copy_count = 5
+    prompt_tmpl = '{query}\n\n要求：用大约100字回复以上问题。'
+    copy_count = 5
 
-    # def process_query(self, query: str) -> list[str]:
-    #     resp = self._process_query(query)
-    #     return f'{(query + '\n') * self.copy_count}\n{resp}'
+    def process_query(self, query: str, **kw) -> list[str]:
+        resp = self._process_query(query)
+        if kw.get('type') == 'query':
+            return (query + '\n') * self.copy_count + f'\n\n{resp}'
+        return f'{query}\n\n{resp}'
 

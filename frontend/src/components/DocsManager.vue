@@ -116,7 +116,7 @@ const handleFileChange = async (event) => {
 }
 
 const deleteFile = (index: number) => {
-    http.post('/delete_by_file', {'upload_file': tableData.value[index].name})
+    http.post('/delete_by_file', {'file_id': tableData.value[index].file_id})
     .then(response => {
         get_file_list();
     })

@@ -7,6 +7,22 @@ import re
 # from llama_index.core.node_parser import SentenceSplitter
 # from tools import title_process
 # from langchain_experimental.text_splitter import SemanticChunker
+from functools import partial
+import tiktoken
+from reader.parser.sentence1 import SentenceSplitter
+from llms.openai_llm import OpenaiLLM
+
+GET_CONTEXT_PROMPT = """
+以下是全文：
+
+{whole_document}
+
+以下是我们想要放置在整个文档中的块:
+
+{chunk_content}
+
+请简要概述此段落在整个文档中的位置，以便改善对该段落的搜索检索。仅提供简要概述，不要提供其他内容。
+"""
 
 
 class MyPdfReader:
@@ -46,6 +62,79 @@ class MyPdfReader:
     #     }
     #     chunks = [Document(text=chunk.page_content, metadata=metadata) for chunk in chunks]
     #     return FileInfo(documents=chunks)
+
+    # def _get_chunk_context(self, chunk: str, whole_document: str) -> str:
+    #     openai_llm = OpenaiLLM(
+    #         'gpt-4o-mini', 
+    #         custom_embedding_model=None,
+    #         api_base='https://api.gptsapi.net/v1'
+    #     )
+    #     result = openai_llm.chat(GET_CONTEXT_PROMPT.format(whole_document=whole_document, chunk_content=chunk))
+    #     return result
+    
+    def _get_start_end_index_around(self, n: int, total: int, index: int) -> Tuple[int, Union[int, None]]:
+        a = (2 * n + 1)
+        if total <= a:
+            return 0, None
+
+        if index <= n:
+            return 0, a
+        
+        if index >= (total -n):
+            return -a, None
+
+        start = index - 5
+        end = start + a
+        return start, end
+
+    def load_data(self, file_path: str) -> FileInfo:
+        if isinstance(file_path, str):
+            file = Path(file_path)
+        else:
+            file = file_path
+
+        self.reader = PdfReader(file_path)
+        self.file_name = file.name
+        meta = self.reader.metadata
+        s = ''
+        for page in self.reader.pages:
+            text = page.extract_text()
+            if not text:
+                continue
+            s += text
+        
+        enc = tiktoken.encoding_for_model('gpt-4o-mini')
+        tokenizer = partial(enc.encode, allowed_special="all")
+
+        splitter = SentenceSplitter(
+            chunk_size=DEFAULT_CHUNK_SIZE,
+            chunk_overlap=SENTENCE_CHUNK_OVERLAP,
+            paragraph_separator=DEFAULT_PARAGRAPH_SEP,
+            secondary_chunking_regex=CHUNKING_REGEX,
+            tokenizer=tokenizer
+        )
+        chunks = splitter.split_text(s)
+
+        documents = []
+        for i, chunk in enumerate(chunks):
+            # start, end = self._get_start_end_index_around(5, len(chunks), i)
+            # chunk_context = self._get_chunk_context(chunk, '\n'.join(chunks[start: end]))
+            metadata = {
+                'file_name': self.file_name,
+                'seq': i + 1,
+                'words_num': len(chunk),
+                # 'origin_chunk': chunk,
+                # 'chunk_context': chunk_context,
+            }
+            # text = f'{chunk_context}\n{chunk}'
+            documents.append(Document(text=chunk, metadata=metadata))
+
+        return FileInfo(
+            author=meta.author, 
+            title=meta.title, 
+            documents=documents, 
+            max_page_num=len(self.reader.pages)
+        )
     
     def load_data_by_page(self, file_path: Union[str, Path]) -> FileInfo:
         # def visitor_body(text, cm, tm, fontDict, fontSize):
@@ -120,16 +209,16 @@ class MyPdfReader:
                 }
                 documents.append(Document(text=text, metadata=metadata))
         
-        modification_date = meta.modification_date.strftime('%Y-%m-%d %H:%M:%S') if meta.modification_date else ''
-        creation_date = meta.creation_date.strftime('%Y-%m-%d %H:%M:%S') if meta.creation_date else ''
+        # modification_date = meta.modification_date.strftime('%Y-%m-%d %H:%M:%S') if meta.modification_date else ''
+        # creation_date = meta.creation_date.strftime('%Y-%m-%d %H:%M:%S') if meta.creation_date else ''
         return FileInfo(
             author=meta.author, 
-            creator=meta.creator, 
-            producer=meta.producer, 
-            subject=meta.subject, 
+            # creator=meta.creator, 
+            # producer=meta.producer, 
+            # subject=meta.subject, 
             title=meta.title, 
-            modification_date=modification_date,
-            creation_date=creation_date,
+            # modification_date=modification_date,
+            # creation_date=creation_date,
             contents=contents, 
             max_content_level=max_content_level, 
             documents=documents, 
@@ -197,5 +286,5 @@ class MyPdfReader:
 if __name__ == '__main__':
     pdf_reader = MyPdfReader()
     file_path = 'C:\\Users\\86176\\Documents\\AI\\rag_learn\\经纬华夏.pdf'
-    result = pdf_reader.load_data_by_page(file_path)
+    result = pdf_reader.load_data(file_path)
     print(result)
