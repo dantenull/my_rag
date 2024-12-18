@@ -1,7 +1,9 @@
 import nltk
-from nltk import ne_chunk, pos_tag, word_tokenize
+# from nltk import ne_chunk, pos_tag, word_tokenize
 from span_marker import SpanMarkerModel
 from typing import Dict, List
+
+# nltk.data.path.append('/home/nltk_data')
 
 DEFAULT_ENTITY_MAP = {
     "PER": "persons",
@@ -22,7 +24,10 @@ DEFAULT_ENTITY_MAP = {
 }
 
 
-def ner(text: str, entity_types: list[str]) -> Dict[List[str]]:
+def ner(text: str, entity_types: list[str] = None) -> Dict[List[str]]:
+    # 只适合英文
+    if not entity_types:
+        entity_types = DEFAULT_ENTITY_MAP.values()
     # connected_entities = []
     entity_map = {}
     a = nltk.pos_tag(nltk.word_tokenize(text))
@@ -47,7 +52,7 @@ def ner(text: str, entity_types: list[str]) -> Dict[List[str]]:
     for key, val in metadata.items():
         metadata[key] = list(val)
 
-    return entity_map
+    return metadata
 
 
 def ner_with_model(
@@ -56,8 +61,9 @@ def ner_with_model(
         prediction_threshold: float = 0.5,
         span_joiner = ' ',
     ) -> Dict[List[str]]:
+    # 只适合英文
     model = SpanMarkerModel.from_pretrained(model_name)
-    words = word_tokenize(text)
+    words = nltk.word_tokenize(text)
     spans = model.predict(words)
 
     metadata = {}

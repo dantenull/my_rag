@@ -10,7 +10,7 @@ class Milvus:
         database: str = 'default',
         **kw
     ) -> None:
-        self.client = MilvusClient(uri=uri, port=port, db_name=database, **kw)
+        self.client = MilvusClient(uri=uri, port=port, **kw)
         databases = self.client.list_databases()
         if database not in databases:
             self.client.create_database(database)

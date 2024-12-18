@@ -10,13 +10,17 @@ from pydantic.v1.utils import deep_update, unique_list
 
 from constants import PROJECT_ROOT_PATH
 from settings.yaml import load_yaml_with_envvars
+from .read_dotenv import read_dotenv
 
 logger = logging.getLogger(__name__)
+
+read_dotenv(PROJECT_ROOT_PATH)
 
 _settings_folder = os.environ.get("PGPT_SETTINGS_FOLDER", PROJECT_ROOT_PATH)
 
 # if running in unittest, use the test profile
 _test_profile = ["test"] if "tests.fixtures" in sys.modules else []
+# print('MYRAG_PROFILES', os.environ.get("MYRAG_PROFILES", ""))
 
 active_profiles: list[str] = unique_list([
         item.strip()

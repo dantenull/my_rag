@@ -88,10 +88,21 @@ def eval_by_2wikimultihop_process_data(request: Request, data: Eval2wikimultihop
     service = request.state.injector.get(ChatService)
     service.eval_by_2wikimultihop_process_data(data.file_path, data.eval_num)
 
+@chat_router.post("/eval_by_2wikimultihop_process_data1")
+def eval_by_2wikimultihop_process_data1(request: Request, data: Eval2wikimultihop):
+    service = request.state.injector.get(ChatService)
+    service.eval_by_2wikimultihop_process_data1(data.file_path, data.eval_num)
+
 @chat_router.post("/eval_by_2wikimultihop")
 async def eval_by_2wikimultihop(request: Request, data: Eval2wikimultihop):
     service = request.state.injector.get(ChatService)
     result = await service.eval_by_2wikimultihop(data.file_path, data.eval_num)
+    return result
+
+@chat_router.post("/eval_by_2wikimultihop1")
+async def eval_by_2wikimultihop1(request: Request, data: Eval2wikimultihop):
+    service = request.state.injector.get(ChatService)
+    result = await service.eval_by_2wikimultihop1(data.file_path, data.eval_num)
     return result
 
 @chat_router.post("/save_2wikimultihop_data")

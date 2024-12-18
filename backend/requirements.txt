@@ -1,6 +1,7 @@
 fastapi 
 pymongo 
 celery 
+flower
 redis 
 openai 
 pydantic 
@@ -17,3 +18,7 @@ torch
 xformers
 llama_index
 python-multipart
+uvicorn
+pymilvus
+span_marker
+networkx

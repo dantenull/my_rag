@@ -4,10 +4,12 @@ from component.embeddings.embeddings_component import EmbeddingsComponent
 from settings.settings import Settings
 from db.mongodb import MyMongodb
 from db.es_client import ElasticsearchClient
-from celery_app import process_async_insert_to_es, insert_to_milvus, insert_chunk_to_mongodb
+from celery_app import process_async_insert_to_es, insert_to_milvus, insert_chunk_to_mongodb, insert_graph_nodes_edges, insert_graph_nodes_edges_descriptions, task_start, task_end
 from vectorstores.milvus import Milvus
 from query_optimizer import *
 from tools import reciprocal_rank_fusion
+from extraction.extraction import ExtractionBase 
+from query.query_graph import GraphSeach
 
 import json
 from datetime import datetime
@@ -16,6 +18,7 @@ from typing import List, Tuple, Dict
 from injector import singleton
 import uuid
 from pathlib import Path
+import traceback 
 
 # def reciprocal_rank_fusion(search_results_dict: List[List], k: int = 60) -> List[Tuple]:
 #     fused_scores = {}
@@ -52,6 +55,8 @@ class Evaluation2wikimultihop:
         self.db = db
         self.es_client = es_client
         self.embeddings_model = settings.embeddings.model_name
+        self.extractor = ExtractionBase(settings.extraction.mode, llm=self.llm)
+        self.graph_query = GraphSeach(self.llm, self.embeddings, self.vectorstore, self.db, self.settings)
         # self.eval_num = eval_num
         # self.file_path = file_path
         # self._load_dataset(file_path / 'gold.json', eval_num)
@@ -66,6 +71,7 @@ class Evaluation2wikimultihop:
         if eval_num:
             content = content[:eval_num]
         self.origin_data = content
+        # TODO 根据数据库而不是文件加载数据
         self.db.insert_data_by_field('2wikimultihop_data', self.origin_data, '_id')
     
     def _process_data(self, data: Dict):
@@ -74,9 +80,9 @@ class Evaluation2wikimultihop:
         contexts = data['context']
         type = data['type']
 
-        data = self.db.get_one_data('files', {'file_id': file_id})
-        if data:
-            return
+        # data = self.db.get_one_data('files', {'file_id': file_id})
+        # if data:
+        #     return
 
         info = {
             'file_id': file_id,
@@ -108,7 +114,8 @@ class Evaluation2wikimultihop:
                     'metadata': {
                         'index': i,
                         'doc_name': doc_name,
-                    }
+                    },
+                    'remark': '2wikimultihop',
                 })
                 chunks.append({
                     'file_id': file_id,
@@ -123,7 +130,8 @@ class Evaluation2wikimultihop:
                         'embeddings_model': self.embeddings_model,
                         'file_name': file_id,
                         'seq': i
-                    }
+                    },
+                    'remark': '2wikimultihop',
                 })
         task_es = process_async_insert_to_es.apply_async(kwargs={
             'file_id': file_id, 
@@ -143,18 +151,31 @@ class Evaluation2wikimultihop:
         #         })
         task_vectorstore = chain(
             group([insert_chunk_to_mongodb.si(chunk_info=chunk, file_id=file_id) for chunk in chunks]), 
-            insert_to_milvus.si(file_id = file_id, task_end = True)
+            insert_to_milvus.si(file_id = file_id),
+            insert_graph_nodes_edges.si(file_id = file_id),
+            insert_graph_nodes_edges_descriptions.si(file_id = file_id),
+            task_end.si(file_id = file_id)
         ).apply_async()
+    
+    def process_datas1(self):
+        for data in self.origin_data:
+            file_id = data['_id']
+            insert_graph_nodes_edges_descriptions.apply_async(args=[file_id])
 
     def process_datas(self):
+        files = self.db.get_all_files({'upload_state': 'done'})
+        file_ids = set([file['file_id'] for file in files])
         for data in self.origin_data:
+            file_id = data['_id']
+            if file_id in file_ids:
+                continue
             self._process_data(data)
 
     def _similarity_search_by_vectordb(self, query: str, file_id: str = '', n: int = 10, **kwargs):
         # print('--------similarity_search_by_vectordb----------')
         # query = QueryOptimiserQuery2doc().process_query(query)
         data = self.embeddings.encode(query)
-        result = self.vectorstore.search_data(self.settings.embeddings.dim, data=data, limit=n)
+        result = self.vectorstore.search_data(self.settings.embeddings.dim, data=data, limit=n, filter=f"file_id == '{file_id}' and seq != -1")
         collection_name = f'vector_{self.settings.embeddings.dim}'
         chunks = self.vectorstore.client.get(collection_name, [r['id'] for r in result], output_fields=['chunk', 'doc_name', 'seq'])
         # print([(chunk.get('id'), chunk.get('doc_name'), chunk.get('seq')) for chunk in chunks])
@@ -197,8 +218,8 @@ class Evaluation2wikimultihop:
         # es_result = await self._similarity_search_by_es(query, file_id, n, **kwargs)
         # texts = self._get_rrf_result([vectordb_result, es_result], n)
         # prompt = 'According to the provided document, answer the following questions:\n' + '\n'.join(texts)
-        prompt = f"Based on the given document, answer this question:{query}\nPlease follow the following guidelines when answering:\nYou don't need to explain the reason. Just give a brief answer."
-        query = 'The given document is as follows:' + '\n'.join(texts)
+        prompt = f"Please answer the following question based on the given document: {query}. \nRequest: Do not explain why, only give the shortest answer."
+        query = 'The given document is as follows:\n' + '\n'.join(texts)
         result = self.llm.chat(query=query, prompt=prompt)
         return result
     
@@ -217,7 +238,7 @@ class Evaluation2wikimultihop:
         answer = await self._mix_search([text[0] for text in texts], question)
         return answer, sp, evidence, search_result
 
-    async def eval_dataset(self):
+    async def eval_dataset(self, save_result: bool = True, with_graph_query: bool = False):
         result = {
             'answer': {},
             'sp': {},
@@ -230,7 +251,21 @@ class Evaluation2wikimultihop:
         for data in self.origin_data:
             try:
                 file_id = data['_id']
-                answer, sp, evidence, search_result = await self._get_answer(data)
+                print(f'file_id: {file_id}')
+                if with_graph_query:
+                    question = data['question']
+                    answer = self.graph_query.search(question, file_id)
+                    prompt = f"You need to extract the shortest answer from the existing answers based on the question. You don't have to think about where the answer came from, you don't have to think about the correctness of the answer, just extract the shortest answer from the given answer. The questions are as follows:\n{question}"
+                    query = f"The given answer is as follows:\n{answer}"
+                    answer = self.llm.chat(query=query, prompt=prompt)
+                    # print('===answer===')
+                    # print(answer)
+                    sp = []
+                    evidence = []
+                    search_result = []
+                else:
+                    answer, sp, evidence, search_result = await self._get_answer(data)
+                # print(answer)
                 result['answer'][file_id] = answer
                 result['sp'][file_id] = sp
                 result['evidence'][file_id] = evidence
@@ -243,14 +278,18 @@ class Evaluation2wikimultihop:
                     'search_result': search_result
                 })
             except Exception as e:
-                print(str(e))
+                # print(str(e))
+                traceback.print_exc()
                 continue
             i += 1
             print(f'{i} / {a}')
             # if i > 1000:
             #     break
+        if not result1:
+            return
         
-        self.db.insert_data_by_field('eval_results_2wikimultihop', result1, 'file_id')
+        if save_result:
+            self.db.insert_data_by_field('eval_results_2wikimultihop', result1, 'file_id')
             
         # prediction_file = './pred.json'
         # with open(prediction_file, 'w') as f:
@@ -259,11 +298,12 @@ class Evaluation2wikimultihop:
 
         metrics = eval(result, self.origin_data, self.file_path / 'id_aliases.json')
 
-        self.db.insert_data('eval_result', {
-            'dataset': '2wikimultihop',
-            'result': metrics,
-            'create_time': datetime.now(),
-            'eval_id': eval_id,
-            'eval_num': i,
-        })
+        if save_result:
+            self.db.insert_data('eval_result', {
+                'dataset': '2wikimultihop',
+                'result': metrics,
+                'create_time': datetime.now(),
+                'eval_id': eval_id,
+                'eval_num': i,
+            })
         return metrics

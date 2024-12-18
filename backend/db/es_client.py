@@ -53,7 +53,7 @@ class ElasticsearchClientBase:
             }
             mappings = {
                 "properties": {
-                    "dynamic": "true",
+                    # "dynamic": "true",
                     'doc_id': {
                         'type': 'keyword',
                         'index': True
@@ -64,7 +64,7 @@ class ElasticsearchClientBase:
                         "index": True,
                         "analyzer": "ik_max_word",
                         "search_analyzer": "ik_smart",
-                    }
+                    },
                 }
             }
             await self.client.indices.create(index=index_name, mappings=mappings, settings=settings, timeout=-1)
@@ -158,7 +158,7 @@ class ElasticsearchClientBase:
             }
             mappings = {
                 "properties": {
-                    "dynamic": "true",
+                    # "dynamic": "true",
                     'doc_id': {
                         'type': 'keyword',
                         'index': True
@@ -237,4 +237,4 @@ class ElasticsearchClientBase:
 class ElasticsearchClient(ElasticsearchClientBase):
     @inject
     def __init__(self, settings: Settings) -> None:
-        super().__init__(settings.elasticsearch.host, settings.elasticsearch.user, os.getenv('ELASTIC_PASSWORD'))
+        super().__init__(settings.elasticsearch.host, settings.elasticsearch.user, os.getenv('MYRAG_ELASTIC_PASSWORD'))

@@ -349,4 +349,6 @@ class IngestComponent:
         self.db.delete_fileinfo(file_id)
         self.db.delete_contents(file_id)
         self.db.delete_chunks(file_id)
+        self.db.delete_infos('entities', file_id)
+        self.db.delete_infos('relationships', file_id)
         await self.es_client.async_delete_file('upload_files', file_id)

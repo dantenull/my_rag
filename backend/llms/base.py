@@ -10,6 +10,9 @@ class LLM:
     # tokenizer = None
     llm = None
 
+    def chat(self, query: str, prompt: str = '', history: List = []) -> str:
+        raise NotImplementedError('not implement chat')
+
 # class Embeddings:
 #     model_name = ''
 #     embeddings = None

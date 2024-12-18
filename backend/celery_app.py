@@ -1,10 +1,10 @@
 '''
-celery -A celery_app worker --loglevel=info -P eventlet
+celery -A celery_app worker --loglevel=info -P eventlet --concurrency=10   
 celery -A celery_app flower --address=127.0.0.1 --port=5566
 '''
 
 from celery import Celery
-from typing import List, Dict, Iterable, Union
+from typing import List, Dict, Iterable, Union, Any
 from db.es_client import ElasticsearchClientBase
 from db.mongodb import MyMongodbBase
 from settings.settings import unsafe_typed_settings as rag_settings
@@ -24,6 +24,11 @@ import time
 from datetime import datetime
 from vectorstores.milvus import Milvus
 from component.embeddings.embeddings_component import EmbeddingsComponent
+from extraction.extraction import ExtractionBase 
+from component.llm.llm_component import LLMComponent
+import networkx as nx
+from collections import defaultdict
+import uuid
 
 # class CustomEmbeddings:
 #     def __init__(self) -> None:
@@ -120,21 +125,24 @@ celery_app.config_from_object('celeryconfig')
 #         'schedule': crontab(minute='*/1'),
 #     },
 # }
-es_client = ElasticsearchClientBase(rag_settings.elasticsearch.host, rag_settings.elasticsearch.user, os.getenv('ELASTIC_PASSWORD'))
-mongodb_client = MyMongodbBase(rag_settings.mongodb.port, rag_settings.mongodb.db_name)
+es_client = ElasticsearchClientBase(rag_settings.elasticsearch.host, rag_settings.elasticsearch.user, os.getenv('MYRAG_ELASTIC_PASSWORD'))
+mongodb_client = MyMongodbBase(rag_settings.mongodb.port, rag_settings.mongodb.db_name, rag_settings.mongodb.username)
 chroma_client = chromadb.PersistentClient(path='.\\chroma_db_test' + '_' + rag_settings.llm.model)
 # chroma_client_collection = chroma_client.get_or_create_collection(rag_settings.chroma.collection, embedding_function=MyEmbeddingFunction())
 milvus_client = Milvus(rag_settings.milvus.uri, rag_settings.milvus.port, rag_settings.milvus.database)
+llm = LLMComponent(rag_settings).llm
 
 
-def chat(query: str, prompt: str = '') -> str:
+def chat(query: str, prompt: str = '', history: List = []) -> str:
     if prompt:
         messages = [
+            *history,
             {'role': 'system', 'content': prompt},
             {'role': 'user', 'content': query}
         ]
     else:
         messages = [
+            *history,
             {'role': 'user', 'content': query}
         ]
     response = openai_llm.chat.completions.create(
@@ -205,6 +213,7 @@ def test_task(self):
 @celery_app.task(bind=True, default_retry_delay=DEFAULT_RETRY_DELAY)
 def process_async_insert_to_es(self, file_id: str, index_name: str, data: List[Dict], **kw):
     # 写elasticsearch任务
+    # TODO 去掉异步
     global current_es_task_loop
     try:
         # loop = get_or_create_event_loop()
@@ -390,6 +399,212 @@ def insert_to_milvus(self, file_id: str, **kw):
             # self.apply_async(args=[contents, file_name], queue='failed')
             raise
 
+@celery_app.task(bind=True, default_retry_delay=DEFAULT_RETRY_DELAY)
+def insert_graph_nodes_edges(self, file_id: str, **kw):
+    try:
+        extractor = ExtractionBase(rag_settings.extraction.mode, llm=llm)
+        chunks = mongodb_client.get_chunks(file_id)
+        # entities: Any, graph_data: nx.Graph = extractor.extract_graph(chunks)
+        r = extractor.extract_graph(chunks)
+        graph_data: nx.Graph = r[1]
+        '''
+        TODO 处理graph_data。
+        整体信息入mongodb，desc入milvus，这两条数据做关联。
+        最后在所有的实体抽取完了之后，在chunk库中标记每个chunk和实体关系的关联。 ok
+        聚类clustering。
+        其他：
+        各个库之间字段关系图。
+        '''
+        vectors_data = []
+        descriptions = []
+        for name, node in graph_data.nodes(data=True):
+            description = node['description']
+            entity_id = str(uuid.uuid4())
+            mongodb_client.insert_data('entities', {
+                'id': entity_id,
+                'name': name,
+                'type': node['type'],
+                'description': description,
+                'source_ids': node['source_id'].split(', '),
+                'file_id': file_id,
+                # 'datasets': datasets_name
+            })
+            if not description:
+                continue
+            descriptions.append(description)
+            vectors_data.append({
+                'id': str(uuid.uuid4()),
+                'file_id': file_id,
+                'words_num': len(description),
+                'document': description,
+                'entity_id': entity_id,
+                'file_name': '',
+                'model_name': '',
+                'chunk': '',
+                'seq': -1,
+            })
+        
+        for source, target, edge in graph_data.edges(data=True):
+            description = edge['description']
+            edge_id = str(uuid.uuid4())
+            mongodb_client.insert_data('relationships', {
+                'id': edge_id,
+                'source': source,
+                'target': target,
+                'weight': edge['weight'],
+                'description': description,
+                'source_ids': edge['source_id'].split(', '),
+                'file_id': file_id,
+                # 'datasets': datasets_name
+            })
+            if not description:
+                continue
+            descriptions.append(description)
+            vectors_data.append({
+                'id': str(uuid.uuid4()),
+                'file_id': file_id,
+                'words_num': len(description),
+                'document': description,
+                'edge_id': edge_id,
+                'file_name': '',
+                'model_name': '',
+                'chunk': '',
+                'seq': -1,
+            })
+        
+        embeddings = EmbeddingsComponent(rag_settings).embeddings
+        vectors = embeddings.encode(descriptions)
+        for i, vector in enumerate(vectors):
+            vectors_data[i]['embedding'] = vector
+        # for i, v in enumerate(vectors_data):
+        #     print(f'index:{i}')
+        #     print({
+        #         'file_id': v['file_id'],
+        #         'words_num': v['words_num'],
+        #         'document': v['document'],
+        #         'the_id': v['edge_id'] if 'edge_id' in v else v['entity_id'],
+        #         'embedding': len(v['embedding']),
+        #         'file_name': '',
+        #         'model_name': '',
+        #         'chunk': '',
+        #         'seq': -1,
+        #     })
+        milvus_client.insert_data(rag_settings.embeddings.dim, vectors_data)
+    except Exception as exc:
+        logger.error(f"Task failed: {exc}, retrying...")
+        # traceback.print_exc()
+        if self.request.retries < self.max_retries:
+            raise self.retry(exc=exc)
+        else:
+            logger.error(f"Task failed after {self.max_retries} retries: {exc}")
+            # self.apply_async(args=[contents, file_name], queue='failed')
+            raise
+    
+@celery_app.task(bind=True, default_retry_delay=DEFAULT_RETRY_DELAY)
+def insert_graph_nodes_edges_descriptions(self, file_id: str, **kw):    
+    try:
+        vectors_data = []
+        descriptions = []
+        embeddings = EmbeddingsComponent(rag_settings).embeddings
+        entities = mongodb_client.get_data('entities', {'file_id': file_id})
+        for entity in entities:
+            description = entity['description']
+            if not description:
+                continue
+            entity_id = entity['id']
+            descriptions.append(description)
+            vectors_data.append({
+                'id': str(uuid.uuid4()),
+                'file_id': file_id,
+                'words_num': len(description),
+                'document': description,
+                'entity_id': entity_id,
+                'file_name': '',
+                'model_name': '',
+                'chunk': '',
+                'seq': -1,
+            })
+        
+        relationships = mongodb_client.get_data('relationships', {'file_id': file_id})
+        for relationship in relationships:
+            description = relationship['description']
+            if not description:
+                continue
+            edge_id = relationship['id']
+            descriptions.append(description)
+            vectors_data.append({
+                'id': str(uuid.uuid4()),
+                'file_id': file_id,
+                'words_num': len(description),
+                'document': description,
+                'edge_id': edge_id,
+                'file_name': '',
+                'model_name': '',
+                'chunk': '',
+                'seq': -1,
+            })
+        
+        embeddings = EmbeddingsComponent(rag_settings).embeddings
+        vectors = embeddings.encode(descriptions)
+        for i, vector in enumerate(vectors):
+            vectors_data[i]['embedding'] = vector
+        # for i, v in enumerate(vectors_data):
+        #     print(f'index:{i}')
+        #     print({
+        #         'file_id': v['file_id'],
+        #         'words_num': v['words_num'],
+        #         'document': v['document'],
+        #         'the_id': v['edge_id'] if 'edge_id' in v else v['entity_id'],
+        #         'embedding': len(v['embedding']),
+        #         'embedding_type': type(v['embedding']),
+        #         'file_name': v['file_name'],
+        #         'model_name': v['model_name'],
+        #         'chunk': v['chunk'],
+        #         'seq': v['seq'],
+        #     })
+        milvus_client.insert_data(rag_settings.embeddings.dim, vectors_data)
+    except Exception as exc:
+        logger.error(f"Task failed: {exc}, retrying...")
+        # traceback.print_exc()
+        if self.request.retries < self.max_retries:
+            raise self.retry(exc=exc)
+        else:
+            logger.error(f"Task failed after {self.max_retries} retries: {exc}")
+            # self.apply_async(args=[contents, file_name], queue='failed')
+            raise
+
+@celery_app.task(bind=True, default_retry_delay=DEFAULT_RETRY_DELAY)
+def insert_graph_chunk_fields(self, file_id: str):
+    try:
+        entities = mongodb_client.get_data('entities', {'file_id': file_id})
+        entities_ids = defaultdict(list)
+        for entity in entities:
+            source_ids = entity['source_ids']
+            for source_id in source_ids:
+                entities_ids[source_id].append(entity['id'])
+        
+        relationships = mongodb_client.get_data('relationships', {'file_id': file_id})
+        relationship_ids = defaultdict(list)
+        for relationship in relationships:
+            source_ids = relationship['source_ids']
+            for source_id in source_ids:
+                relationship_ids[source_id].append(relationship['id'])
+        
+        for source_id, ids in entities_ids:
+            mongodb_client.update_data('chunks', {'id': source_id}, {'entities': ids})
+
+        for source_id, ids in relationship_ids:
+            mongodb_client.update_data('chunks', {'id': source_id}, {'relationships': ids})
+    except Exception as exc:
+        logger.error(f"Task failed: {exc}, retrying...")
+        # traceback.print_exc()
+        if self.request.retries < self.max_retries:
+            raise self.retry(exc=exc)
+        else:
+            logger.error(f"Task failed after {self.max_retries} retries: {exc}")
+            # self.apply_async(args=[contents, file_name], queue='failed')
+            raise
+
 # @celery_app.task(bind=True, default_retry_delay=DEFAULT_RETRY_DELAY)
 # def insert_to_chroma(self, file_id: str, texts: Iterable[str], metadatas: List[dict] = None, ids: List[str] = None):
 #     # 写向量数据库任务
@@ -442,7 +657,16 @@ def insert_to_milvus(self, file_id: str, **kw):
 #             raise
 
 
-def task_end(file_id: str, **kw):
+@celery_app.task(bind=True, default_retry_delay=DEFAULT_RETRY_DELAY)
+def task_start(self, file_id: str, **kw):
+    _task_start(file_id, **kw)
+
+@celery_app.task(bind=True, default_retry_delay=DEFAULT_RETRY_DELAY)
+def task_end(self, file_id: str, **kw):
+    _task_end(file_id, **kw)
+
+
+def _task_end(file_id: str, **kw):
     # 结束完整任务时执行
     if not file_id:
         return
@@ -457,7 +681,7 @@ def task_end(file_id: str, **kw):
         'cost_seconds': d.total_seconds(),
     }, {'file_id': file_id})
 
-def task_start(file_id: str, **kw):
+def _task_start(file_id: str, **kw):
     # 开始完整任务时执行
     if not file_id:
         return
@@ -478,7 +702,7 @@ def task_prerun_notifier(task_id, task, *args, **kwargs):
     # logger.info(str(instance_attributes))
     file_id = kwargs.get('kwargs').get('file_id', '')
     if kwargs.get('kwargs').get('task_start'):
-        task_start(file_id)
+        _task_start(file_id)
     # 统计任务执行时间
     result = mongodb_client.get_one_data('task_info', {'task_id': task_id})
     start_time = datetime.now()
@@ -500,11 +724,9 @@ def task_prerun_notifier(task_id, task, *args, **kwargs):
 @task_postrun.connect
 def task_postrun_notifier(task_id, task, retval, *args, **kwargs):
     logger.info("From task_postrun_notifier ==> Ok, done!")
-    # logger.info(f'{task_id}, {task}, {retval}, {args}, {kwargs}')
-    # logger.info(f'{task_id}, {kwargs.get("file_id")}')
     file_id = kwargs.get('kwargs').get('file_id', '')
     if kwargs.get('kwargs').get('task_end'):
-        task_end(file_id)
+       _task_end(file_id)
     # 统计任务执行时间
     end_time = datetime.now()
     data = mongodb_client.get_one_data('task_info', {'task_id': task_id})
@@ -530,52 +752,3 @@ def task_failure_notifier(task_id, exception, traceback, einfo, *args, **kwargs)
     logger.info("From task_failure_notifier ==> Task failed successfully!")
     # logger.info(f'{task_id}, {exception}, {traceback}, {einfo}, {args}, {kwargs}')
     # TODO 统计任务执行结果
-
-
-# @celery_app.task
-# def retry_failed_tasks():
-#     failed_tasks = celery_app.control.inspect().reserved(queue='failed')
-#     for task in failed_tasks:
-#         task.apply_async()
-
-# @celery_app.task
-# def retry_failed_tasks():
-#     logger.info('retry_failed_tasks')
-#     # failed_queue = Queue('failed', Exchange('failed'), routing_key='failed')
-#     with Connection('redis://localhost:6379/0') as conn:
-#         consumer = conn.Consumer(failed_queue, accept=['json'])
-#         # producer = conn.Producer()
-
-#         def process_message(body, message):
-#             task_name = body['task']
-#             task_args = body['args']
-#             task_kwargs = body['kwargs']
-#             logger.info(f"Retrying task {task_name} with args {task_args} and kwargs {task_kwargs}")
-#             task = celery_app.signature(task_name, args=task_args, kwargs=task_kwargs)
-#             task.apply_async()
-#             message.ack()
-
-#         consumer.register_callback(process_message)
-#         consumer.consume()
-
-#         while True:
-#             conn.drain_events()
-
-# def move_task_to_failure_queue(task_name, args, kwargs, exc):
-#     # failed_queue = Queue('failed', Exchange('failed'), routing_key='failed')
-#     with Connection('redis://localhost:6379/0') as conn:
-#         producer = conn.Producer()
-#         task_info = {
-#             'task_name': task_name,
-#             'args': args,
-#             'kwargs': kwargs,
-#             'reason': str(exc),
-#         }
-#         producer.publish(
-#             task_info,
-#             exchange=failed_queue.exchange,
-#             routing_key=failed_queue.routing_key,
-#             declare=[failed_queue]
-#         )
-#     print(f"Moved task {task_name} to failure queue")
-    

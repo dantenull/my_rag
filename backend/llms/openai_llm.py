@@ -22,14 +22,17 @@ class OpenaiLLM(LLM):
         # self.tokenizer = OpenaiEmbeddings(self.llm.embeddings, **kw)
         self.model_name = model if model else 'gpt-3.5-turbo'
     
-    def chat(self, query: str, prompt: str = '') -> str:
+    def chat(self, query: str, prompt: str = '', history: List = []) -> str:
+        # TODO 添加异步方法
         if prompt:
             messages = [
+                *history,
                 {'role': 'system', 'content': prompt},
                 {'role': 'user', 'content': query}
             ]
         else:
             messages = [
+                *history,
                 {'role': 'user', 'content': query}
             ]
         response = self.llm.chat.completions.create(

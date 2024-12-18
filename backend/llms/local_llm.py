@@ -2,6 +2,7 @@ from .base import LLM
 from pathlib import Path
 # from transformers import AutoModelForCausalLM, AutoTokenizer, PreTrainedTokenizer
 from injector import singleton
+from typing import List
 
 
 @singleton
@@ -23,7 +24,7 @@ class LocalLLM(LLM):
             # trust_remote_code=True,
         )
     
-    def chat(self, query: str, prompt: str = '') -> str:
+    def chat(self, query: str, prompt: str = '', history: List = []) -> str:
         if not prompt:
             prompt = '你是一个乐于助人的助手。'
         messages = [

@@ -23,7 +23,7 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import (
     ChatPromptTemplate,
 )
-from backend.eval.quality.evaluation import EvaluationQuality
+from eval.quality.evaluation import EvaluationQuality
 from eval.wikimultihop.evaluation_2wikimultihop import Evaluation2wikimultihop
 from query_optimizer import QueryOptimiserHyDE, QueryOptimiserMultiQuery, QueryOptimiserQuery2doc
 from tools import reciprocal_rank_fusion
@@ -446,8 +446,19 @@ class ChatService:
         self.evaluation.init(file_path, eval_num)
         self.evaluation.process_datas()
     
+    def eval_by_2wikimultihop_process_data1(self, file_path: str, eval_num: int = 10):
+        self.evaluation = Evaluation2wikimultihop(self.llm_component, self.embeddings_component, self.db, self.es_client, self.settings)
+        self.evaluation.init(file_path, eval_num)
+        self.evaluation.process_datas1()
+    
     async def eval_by_2wikimultihop(self, file_path: str, eval_num: int = 10):
         self.evaluation = Evaluation2wikimultihop(self.llm_component, self.embeddings_component, self.db, self.es_client, self.settings)
         self.evaluation.init(file_path, eval_num)
         metrics = await self.evaluation.eval_dataset()
+        return metrics
+    
+    async def eval_by_2wikimultihop1(self, file_path: str, eval_num: int = 10):
+        self.evaluation = Evaluation2wikimultihop(self.llm_component, self.embeddings_component, self.db, self.es_client, self.settings)
+        self.evaluation.init(file_path, eval_num)
+        metrics = await self.evaluation.eval_dataset(save_result=True, with_graph_query=True)
         return metrics

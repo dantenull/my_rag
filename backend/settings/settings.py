@@ -1,7 +1,7 @@
 from pydantic import BaseModel, Field
 from typing import Literal
 from settings.settings_loader import load_active_settings, PROJECT_ROOT_PATH
-from .read_dotenv import read_dotenv
+# from .read_dotenv import read_dotenv
 
 
 class LLMSettings(BaseModel):
@@ -38,8 +38,11 @@ class EmbeddingsSettings(BaseModel):
 
 
 class MongodbSettings(BaseModel):
+    host: str = Field(default='localhost')
     port: int
     db_name: str
+    username: str | None = None
+    # password: str | None = None
 
 
 class VectorstoreSettings(BaseModel):
@@ -66,7 +69,9 @@ class RerankSettings(BaseModel):
 
 
 class EntityExtractionSetting(BaseModel):
+    mode: Literal['only_nltk', 'nltk_and_model', 'graph']
     model_path: str
+    nltk_data_path: str | None
 
 
 class Settings(BaseModel):
@@ -111,9 +116,6 @@ class Settings(BaseModel):
 #     es_user: str
 #     # es_password: str
 
-
-read_dotenv(PROJECT_ROOT_PATH)
-
 """
 This is visible just for DI or testing purposes.
 
@@ -127,3 +129,7 @@ This is visible just for DI or testing purposes.
 Use dependency injection or `settings()` method instead.
 """
 unsafe_typed_settings = Settings(**unsafe_settings)
+
+if unsafe_typed_settings.extraction.nltk_data_path:
+    import nltk
+    nltk.data.path.append(unsafe_typed_settings.extraction.nltk_data_path)

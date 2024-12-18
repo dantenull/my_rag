@@ -16,8 +16,10 @@ embeddings:
   dim: 1536
 
 mongodb:
-  port: 27017
+  host: localhost
+  port: 28188
   db_name: test_database
+  username: yxz 
 
 vectorstore:
   database: milvus
@@ -26,7 +28,7 @@ chroma:
   collection: test
 
 milvus:
-  uri: http://192.168.254.185
+  uri: http://127.0.0.1
   port: 19530
   database: my_rag_database
 
@@ -38,6 +40,8 @@ rerank:
   cross_encoder_path: D:\model\bge-reranker-v2-m3
 
 extraction:
+  mode: graph
+  nltk_data_path: /home/nltk_data
   model_path: C:/Users/86176/Documents/AI/models/span-marker-mbert-base-multinerd
 
 

@@ -1,5 +1,6 @@
 from .base import LLM
 from injector import singleton
+from typing import List
 
 @singleton
 class ZhipuaiLLM(LLM):
@@ -19,7 +20,7 @@ class ZhipuaiLLM(LLM):
         # self.tokenizer = ZhipuaiEmbeddings(self.llm.embeddings, **kw)
         self.model_name = model if model else 'glm-4'
     
-    def chat(self, query: str, prompt: str = '') -> str:
+    def chat(self, query: str, prompt: str = '', history: List = []) -> str:
         response = self.llm.chat.completions.create(
             model=self.model_name,
             messages=[{'role': 'user', 'content': prompt}],
